@@ -1,0 +1,12 @@
+id,admin_username,action,target,created_at
+7,admin,CREATE_BACKUP,File:backup_2026_05_18_17_39_49.db,2026-05-18 10:39:49
+8,admin,EXPORT_LOGS,"Type:security, Format:csv",2026-05-18 10:39:49
+9,admin,SYSTEM_CLEANUP,Deleted 0 files + DB cleanup,2026-05-18 10:39:49
+10,admin,MAINTENANCE_ENABLED,System Maintenance Mode,2026-05-18 10:39:49
+11,admin,MAINTENANCE_DISABLED,System Maintenance Mode,2026-05-18 10:39:49
+6,admin,TEST_ACTION,test_target,2026-05-18 08:18:55
+5,admin,TERMINATE_SESSION,SessionID:2,2026-05-18 02:25:41
+3,admin,TERMINATE_SESSION,SessionID:4,2026-05-18 02:25:40
+4,admin,TERMINATE_SESSION,SessionID:3,2026-05-18 02:25:40
+2,admin,TERMINATE_SESSION,SessionID:5,2026-05-18 02:25:39
+1,test_admin,TEST,Test Target,2026-05-18 02:21:22

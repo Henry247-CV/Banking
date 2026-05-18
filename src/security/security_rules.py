@@ -1,0 +1,15 @@
+# Security Rules Configuration
+
+# Authentication Rules
+MAX_LOGIN_ATTEMPTS = 5
+MAX_PIN_ATTEMPTS = 3
+ACCOUNT_LOCK_DURATION_MINUTES = 30
+SESSION_TIMEOUT_MINUTES = 15
+
+# Password Policies
+MIN_PASSWORD_LENGTH = 8
+REQUIRE_UPPERCASE = True
+REQUIRE_NUMBER = True
+
+# PIN Policies
+PIN_LENGTH = 6

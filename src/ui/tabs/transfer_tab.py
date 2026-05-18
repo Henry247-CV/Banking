@@ -16,10 +16,11 @@ from src.ui.components.transfer_form import TransferForm
 from src.ui.components.transaction_table import TransactionTable
 from src.services.transfer_service import TransferService
 from src.services.qr_service import QRService
-from PyQt6.QtWidgets import QFileDialog
 
 from src.core.language_manager import LanguageManager
 from src.core.theme_manager import ThemeManager
+from src.ui.dialogs.security_pin_dialog import SecurityPinDialog
+from src.security.security_manager import SecurityManager
 
 class TransferTab(QWidget):
     balance_updated = pyqtSignal()
@@ -148,6 +149,16 @@ class TransferTab(QWidget):
         if amount > self.user_data['balance']:
             QMessageBox.warning(self, "Insufficient Funds", f"Your current balance is only {"{:,.0f}".format(self.user_data['balance'])} VND.")
             return
+
+        # Security PIN Verification
+        pin_dialog = SecurityPinDialog(self)
+        if pin_dialog.exec() == QDialog.DialogCode.Accepted:
+            pin = pin_dialog.get_pin()
+            if not SecurityManager.verify_security_pin(self.user_data['username'], pin):
+                QMessageBox.critical(self, "Security Error", "Invalid Security PIN.")
+                return
+        else:
+            return  # User cancelled
 
         # Process Transfer
         receiver_id = data['account']

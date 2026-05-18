@@ -20,17 +20,46 @@ class NotificationService:
             conn.close()
 
     @staticmethod
-    def get_user_notifications(username):
-        """Retrieves all notifications for a user, sorted by newest first."""
+    def get_user_notifications(username, tier="STANDARD"):
+        """Retrieves all notifications for a user (personal + broadcast), sorted by newest first."""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        target_tier = f"{tier}_USERS"
+        
         cursor.execute(
-            "SELECT id, title, message, type, is_read, created_at FROM notifications WHERE username = ? ORDER BY created_at DESC",
-            (username,)
+            """
+            SELECT id, title, message, type, is_read, created_at, priority 
+            FROM notifications 
+            WHERE username = ? 
+               OR target = 'ALL_USERS' 
+               OR target = ?
+            ORDER BY created_at DESC
+            """,
+            (username, target_tier)
         )
         notifications = cursor.fetchall()
         conn.close()
         return notifications
+
+    @staticmethod
+    def get_active_maintenance_alerts():
+        """Returns active maintenance alerts (priority HIGH/CRITICAL) for the user app."""
+        conn = get_db_connection()
+        if not conn: return []
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT title, message, priority FROM notifications 
+                   WHERE type = 'MAINTENANCE' AND created_at > datetime('now', '-1 day')
+                   ORDER BY created_at DESC LIMIT 1"""
+            )
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error getting maintenance alerts: {e}")
+            return []
+        finally:
+            conn.close()
 
     @staticmethod
     def mark_all_as_read(username):

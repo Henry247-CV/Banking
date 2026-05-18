@@ -1,12 +1,13 @@
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel,
+    QVBoxLayout, QHBoxLayout, QLabel,
 )
 from PyQt6.QtCore import Qt
 import src.core.theme as theme
 from src.core.theme_manager import ThemeManager
+from src.design.component_factory import BaseCard
 
 
-class AdminStatCard(QFrame):
+class AdminStatCard(BaseCard):
     """Enterprise-style stat card for admin dashboard overview."""
 
     def __init__(self, title="", value="", trend_text="", icon="📊", accent_color=None):
@@ -18,6 +19,7 @@ class AdminStatCard(QFrame):
         self.accent_color = accent_color
         self.theme_manager = ThemeManager()
 
+        self.setObjectName("AdminStatCard")
         self.setMinimumHeight(120)
         self.setMaximumHeight(160)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -35,10 +37,12 @@ class AdminStatCard(QFrame):
         header_row.setSpacing(8)
 
         self.icon_label = QLabel(self.icon_text)
+        self.icon_label.setObjectName("AdminStatIcon")
         self.icon_label.setFixedSize(32, 32)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.title_label = QLabel(self.title_text)
+        self.title_label.setObjectName("AdminStatTitle")
 
         header_row.addWidget(self.icon_label)
         header_row.addWidget(self.title_label)
@@ -46,9 +50,11 @@ class AdminStatCard(QFrame):
 
         # Value
         self.value_label = QLabel(self.value_text)
+        self.value_label.setObjectName("AdminStatValue")
 
         # Trend
         self.trend_label = QLabel(self.trend_text_str)
+        self.trend_label.setObjectName("AdminStatTrend")
 
         layout.addLayout(header_row)
         layout.addStretch()
@@ -68,58 +74,40 @@ class AdminStatCard(QFrame):
         self.trend_label.setVisible(bool(trend))
 
     def update_theme(self):
+        super().update_theme()
         theme.update_globals()
         accent = self.accent_color or theme.CYAN
 
-        # Card background — slightly deeper than user cards for enterprise feel
-        card_bg = theme.CARD_BG
-        border_color = theme.BORDER
-        text_primary = theme.TEXT_PRIMARY
-        text_secondary = theme.TEXT_SECONDARY
-
-        self.setStyleSheet(f"""
-            AdminStatCard {{
-                background-color: {card_bg};
-                border: 1px solid {border_color};
-                border-radius: 14px;
+        self.setStyleSheet(self.styleSheet() + f"""
+            QFrame#AdminStatCard {{
                 border-left: 3px solid {accent};
             }}
-            AdminStatCard:hover {{
+            QFrame#AdminStatCard:hover {{
                 border: 1px solid {accent};
                 border-left: 3px solid {accent};
             }}
-        """)
-
-        self.icon_label.setStyleSheet(f"""
-            background-color: {theme.PANEL_BG};
-            border-radius: 6px;
-            font-size: 16px;
-            border: 1px solid {border_color};
-        """)
-
-        self.title_label.setStyleSheet(f"""
-            color: {text_secondary};
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            border: none;
-            background: transparent;
-        """)
-
-        self.value_label.setStyleSheet(f"""
-            color: {text_primary};
-            font-size: 22px;
-            font-weight: 800;
-            border: none;
-            background: transparent;
-        """)
-
-        trend_color = theme.GREEN if self.trend_text_str.startswith("+") or self.trend_text_str.startswith("↑") else accent
-        self.trend_label.setStyleSheet(f"""
-            color: {trend_color};
-            font-size: 11px;
-            font-weight: 600;
-            border: none;
-            background: transparent;
+            QLabel#AdminStatIcon {{
+                background-color: {theme.PANEL_BG};
+                color: {theme.TEXT_PRIMARY};
+                border-radius: 6px;
+                font-size: 16px;
+                border: 1px solid {theme.BORDER};
+            }}
+            QLabel#AdminStatTitle {{
+                color: {theme.TEXT_SECONDARY};
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                text-transform: uppercase;
+            }}
+            QLabel#AdminStatValue {{
+                color: {theme.TEXT_PRIMARY};
+                font-size: 22px;
+                font-weight: 800;
+            }}
+            QLabel#AdminStatTrend {{
+                color: {accent if not (self.trend_text_str.startswith('+') or self.trend_text_str.startswith('↑')) else theme.GREEN};
+                font-size: 11px;
+                font-weight: 600;
+            }}
         """)

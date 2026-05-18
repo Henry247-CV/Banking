@@ -108,7 +108,8 @@ class NotificationTab(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        notifications = self.notification_service.get_user_notifications(self.user_data['username'])
+        tier = self.user_data.get('customer_tier', 'STANDARD')
+        notifications = self.notification_service.get_user_notifications(self.user_data['username'], tier)
         
         if not notifications:
             empty_container = QFrame()
@@ -130,7 +131,11 @@ class NotificationTab(QWidget):
             return
 
         for n in notifications:
-            card = NotificationCard(n[1], n[2], n[5], is_read=(n[4] == 1))
+            # n[0]: id, n[1]: title, n[2]: message, n[3]: type, n[4]: is_read, n[5]: created_at, n[6]: priority
+            card = NotificationCard(
+                title=n[1], message=n[2], timestamp=n[5], 
+                is_read=(n[4] == 1), priority=n[6], n_type=n[3]
+            )
             self.list_layout.addWidget(card)
 
     def mark_all_read(self):

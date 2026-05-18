@@ -5,6 +5,7 @@ from pathlib import Path
 from src.database.database import get_db_connection
 from src.services.notification_service import NotificationService
 from src.admin.services.security_service import SecurityService
+from src.security.security_manager import SecurityManager
 
 class AuthService:
     @staticmethod
@@ -16,6 +17,11 @@ class AuthService:
         - FROZEN: login allowed, but flag is set in returned data
         - ACTIVE: normal login
         """
+        # Security: Check if account is locked due to failed attempts
+        is_accessible, lock_msg = SecurityManager.check_account_status(username)
+        if not is_accessible:
+            return {"error": "locked", "message": lock_msg}
+
         conn = get_db_connection()
         if not conn: return None
         
@@ -29,6 +35,7 @@ class AuthService:
             if not user_row:
                 # Track failed attempt
                 SecurityService.track_login_attempt(username, "FAILED")
+                SecurityManager.track_failed_attempt(username)
                 return None
             
             user_data = dict(user_row)
@@ -39,6 +46,9 @@ class AuthService:
             if account_status == "SUSPENDED":
                 SecurityService.track_login_attempt(username, "BLOCKED")
                 return {"error": "suspended", "message": "Your account has been suspended."}
+            
+            # Reset failed attempts on success
+            SecurityManager.reset_failed_attempts(username)
             
             # Update last_login timestamp and log success
             try:
@@ -134,6 +144,11 @@ class AuthService:
     @staticmethod
     def register_user(username, password, full_name, phone, cccd, email=""):
         """Registers a user with their phone number as the account number."""
+        is_valid, msg = SecurityManager.validate_password_strength(password)
+        if not is_valid:
+            print(f"Password validation failed: {msg}")
+            return False
+
         # STK equivalent to Phone Number
         acc_num = phone 
         conn = get_db_connection()
@@ -162,6 +177,11 @@ class AuthService:
 
     @staticmethod
     def update_password(user_id, username, new_password):
+        is_valid, msg = SecurityManager.validate_password_strength(new_password)
+        if not is_valid:
+            print(f"Password validation failed: {msg}")
+            return False
+
         conn = get_db_connection()
         if not conn: return False
         try:

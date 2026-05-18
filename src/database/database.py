@@ -45,16 +45,34 @@ def init_db():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
+            username TEXT, -- Specific user if needed
             title TEXT NOT NULL,
             message TEXT NOT NULL,
-            type TEXT,
+            type TEXT DEFAULT 'INFO',
+            priority TEXT DEFAULT 'LOW',
+            target TEXT DEFAULT 'ALL_USERS',
             is_read INTEGER DEFAULT 0,
+            created_by TEXT DEFAULT 'SYSTEM',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """)
 
-        # 4. Savings Table
+        # Safe migrations: notifications table columns
+        cursor.execute("PRAGMA table_info(notifications)")
+        notif_columns = [column[1] for column in cursor.fetchall()]
+
+        notif_column_updates = {
+            "priority": "TEXT DEFAULT 'LOW'",
+            "target": "TEXT DEFAULT 'ALL_USERS'",
+            "created_by": "TEXT DEFAULT 'SYSTEM'",
+        }
+
+        for col, col_type in notif_column_updates.items():
+            if col not in notif_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE notifications ADD COLUMN {col} {col_type}")
+                except sqlite3.OperationalError as e:
+                    print(f"Notification migration notice: {e}")
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS savings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,6 +119,23 @@ def init_db():
         )
         """)
 
+        # 8. System Settings
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        # Insert default maintenance mode if not exists
+        cursor.execute("SELECT * FROM system_settings WHERE key = 'maintenance_mode'")
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO system_settings (key, value) VALUES (?, ?)",
+                ("maintenance_mode", "false")
+            )
+
         # Safe migrations: Check for missing columns
         cursor.execute("PRAGMA table_info(users)")
         existing_columns = [column[1] for column in cursor.fetchall()]
@@ -114,7 +149,11 @@ def init_db():
             "balance": "REAL DEFAULT 10000000.0",
             "customer_tier": "TEXT DEFAULT 'STANDARD'",
             "account_status": "TEXT DEFAULT 'ACTIVE'",
-            "last_login": "DATETIME"
+            "last_login": "DATETIME",
+            "security_pin": "TEXT",
+            "failed_attempts": "INTEGER DEFAULT 0",
+            "last_failed_attempt": "DATETIME",
+            "account_locked_until": "DATETIME"
         }
         
         for col, col_type in column_updates.items():

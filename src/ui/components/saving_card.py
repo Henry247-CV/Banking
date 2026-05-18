@@ -1,18 +1,18 @@
 from PyQt6.QtWidgets import (
-    QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QFrame,
     QProgressBar,
 )
 from PyQt6.QtCore import Qt
 from src.core.theme import *
 from src.core.styles import *
+from src.design.component_factory import BaseCard
 
-class SavingCard(QFrame):
+class SavingCard(BaseCard):
     def __init__(self, goal_name, target, current):
         super().__init__()
+        self.setObjectName("SavingCard")
         self.goal_name = goal_name
         self.target = target
         self.current = current
@@ -20,13 +20,9 @@ class SavingCard(QFrame):
         self.update_theme()
 
     def update_theme(self):
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {theme.CARD_BG};
-                border: 1px solid {theme.BORDER};
-                border-radius: 16px;
-            }}
-            QFrame:hover {{
+        super().update_theme()
+        self.setStyleSheet(self.styleSheet() + f"""
+            QFrame#SavingCard:hover {{
                 border: 1px solid {theme.CYAN};
             }}
         """)

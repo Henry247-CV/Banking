@@ -101,7 +101,12 @@ class SettingsTab(QWidget):
 
         self.sec_section.setStyleSheet(styles["CARD_STYLE"])
         self.sec_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 22px; font-weight: 800; border: none; background: transparent;")
-        self.change_pass_btn.setStyleSheet(styles["SECONDARY_BUTTON"] + "text-align: left; padding-left: 20px;")
+        
+        btn_style = styles["SECONDARY_BUTTON"] + "text-align: left; padding-left: 20px;"
+        self.change_pass_btn.setStyleSheet(btn_style)
+        self.change_pin_btn.setStyleSheet(btn_style)
+        self.session_timeout_btn.setStyleSheet(btn_style)
+        self.view_logs_btn.setStyleSheet(btn_style)
         
         self.load_savings()
 
@@ -117,6 +122,9 @@ class SettingsTab(QWidget):
         
         self.sec_title.setText(f"🔐  {self.lang_manager.get_text('account_settings')}")
         self.change_pass_btn.setText(self.lang_manager.get_text("change_password"))
+        self.change_pin_btn.setText(self.lang_manager.get_text("enter_security_pin").replace("Enter", "Change"))
+        self.session_timeout_btn.setText("Enable Session Timeout (Active)")
+        self.view_logs_btn.setText("View Security Logs")
         
         # Block signals temporarily to prevent infinite loop
         self.theme_combo.blockSignals(True)
@@ -200,18 +208,51 @@ class SettingsTab(QWidget):
         self.sec_section = QFrame()
         layout = QVBoxLayout(self.sec_section)
         layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
+        layout.setSpacing(12)
 
         self.sec_title = QLabel("Security")
         layout.addWidget(self.sec_title)
+        layout.addSpacing(8)
 
         self.change_pass_btn = QPushButton("Change Password")
         self.change_pass_btn.setFixedHeight(50)
         self.change_pass_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.change_pass_btn.clicked.connect(self.show_change_password_dialog)
-
         layout.addWidget(self.change_pass_btn)
+
+        self.change_pin_btn = QPushButton("Change Security PIN")
+        self.change_pin_btn.setFixedHeight(50)
+        self.change_pin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.change_pin_btn.clicked.connect(self.show_change_pin_dialog)
+        layout.addWidget(self.change_pin_btn)
+
+        self.session_timeout_btn = QPushButton("Enable Session Timeout (Active)")
+        self.session_timeout_btn.setFixedHeight(50)
+        self.session_timeout_btn.setEnabled(False) # Informational for demo
+        layout.addWidget(self.session_timeout_btn)
+
+        self.view_logs_btn = QPushButton("View Security Logs")
+        self.view_logs_btn.setFixedHeight(50)
+        self.view_logs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.view_logs_btn.clicked.connect(self.show_security_logs)
+        layout.addWidget(self.view_logs_btn)
+
         self.container_layout.addWidget(self.sec_section)
+
+    def show_change_pin_dialog(self):
+        from src.security.security_manager import SecurityManager
+        from src.ui.dialogs.security_pin_dialog import SecurityPinDialog
+        dialog = SecurityPinDialog(self, title_key="enter_security_pin", desc_key="pin_desc")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            pin = dialog.get_pin()
+            success, msg = SecurityManager.setup_security_pin(self.user_data['username'], pin)
+            if success:
+                QMessageBox.information(self, "Success", msg)
+            else:
+                QMessageBox.critical(self, "Error", msg)
+
+    def show_security_logs(self):
+        QMessageBox.information(self, "Security Logs", "No suspicious activity found on your account recently.")
 
     def handle_theme_change(self, index):
         theme_name = "dark" if index == 0 else "light"

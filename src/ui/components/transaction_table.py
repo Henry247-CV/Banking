@@ -1,5 +1,4 @@
 from PyQt6.QtWidgets import (
-    QTableWidget,
     QTableWidgetItem,
     QHeaderView,
     QAbstractItemView,
@@ -8,52 +7,20 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from src.core.theme import *
 from src.core.styles import *
+from src.design.component_factory import BaseTable
 
-class TransactionTable(QTableWidget):
+class TransactionTable(BaseTable):
     def __init__(self, rows=5, cols=5):
         super().__init__(rows, cols)
         self.setHorizontalHeaderLabels(["Date", "Bank", "Account", "Amount", "Status"])
-        self.verticalHeader().setVisible(False)
-        self.setShowGrid(False)
-        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.setAlternatingRowColors(False)
-        self.setMouseTracking(True)
         self.update_theme()
 
     def update_theme(self):
-        self.setStyleSheet(f"""
-            QTableWidget {{
-                background-color: transparent;
-                color: {theme.TEXT_PRIMARY};
-                gridline-color: transparent;
-                border: none;
-                font-size: 13px;
-            }}
-            QTableWidget::item {{
-                padding: 15px;
-                border-bottom: 1px solid {theme.BORDER};
-            }}
-            QTableWidget::item:selected {{
-                background-color: {theme.PANEL_BG};
-                color: {theme.TEXT_PRIMARY};
-            }}
-            QHeaderView::section {{
-                background-color: transparent;
-                color: {theme.TEXT_SECONDARY};
-                padding: 10px 15px;
-                border: none;
-                border-bottom: 2px solid {theme.BORDER};
-                font-weight: bold;
-                font-size: 12px;
-                text-align: left;
-            }}
-        """)
-        
+        super().update_theme()
         header = self.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
 
     def load_data(self, transactions):
         """Loads real transaction data into the table."""

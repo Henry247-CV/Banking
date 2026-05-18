@@ -15,6 +15,9 @@ from src.core.language_manager import LanguageManager
 from src.core.theme_manager import ThemeManager
 from src.core.utils import safe_currency, safe_text
 from src.admin.services.admin_user_service import AdminUserService
+from src.admin.dialogs.admin_security_dialog import AdminSecurityDialog
+from src.services.auth_service import AuthService
+from PyQt6.QtWidgets import QDialog
 
 
 class StatusBadge(QLabel):
@@ -30,7 +33,7 @@ class StatusBadge(QLabel):
         super().__init__(status)
         self.status = status.upper()
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFixedHeight(26)
+        self.setMinimumHeight(28)
         self.setMinimumWidth(80)
         self.update_style()
 
@@ -73,6 +76,7 @@ class AdminUserDetailCard(QFrame):
         super().__init__()
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
+        self.setObjectName("AdminUserDetailCard")
         self._current_user = None
         self.setMinimumHeight(220)
         self.setMaximumHeight(320)
@@ -88,7 +92,9 @@ class AdminUserDetailCard(QFrame):
         # Title row
         title_row = QHBoxLayout()
         self.detail_title = QLabel(self.lang_manager.get_text("admin_user_details"))
+        self.detail_title.setObjectName("UserDetailTitle")
         self.status_badge = StatusBadge("ACTIVE")
+        self.status_badge.setObjectName("UserStatusBadge")
         title_row.addWidget(self.detail_title)
         title_row.addStretch()
         title_row.addWidget(self.status_badge)
@@ -96,6 +102,7 @@ class AdminUserDetailCard(QFrame):
 
         # Info grid
         self.info_container = QWidget()
+        self.info_container.setObjectName("UserInfoContainer")
         info_grid = QGridLayout(self.info_container)
         info_grid.setContentsMargins(0, 0, 0, 0)
         info_grid.setSpacing(8)
@@ -153,27 +160,32 @@ class AdminUserDetailCard(QFrame):
         actions_row.setSpacing(8)
 
         self.btn_freeze = QPushButton(f"🧊  {self.lang_manager.get_text('admin_freeze')}")
+        self.btn_freeze.setObjectName("BtnFreeze")
         self.btn_freeze.setFixedHeight(36)
         self.btn_freeze.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_freeze.clicked.connect(self._on_freeze)
 
         self.btn_unfreeze = QPushButton(f"🔓  {self.lang_manager.get_text('admin_unfreeze')}")
+        self.btn_unfreeze.setObjectName("BtnUnfreeze")
         self.btn_unfreeze.setFixedHeight(36)
         self.btn_unfreeze.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_unfreeze.clicked.connect(self._on_unfreeze)
 
         self.btn_suspend = QPushButton(f"⛔  {self.lang_manager.get_text('admin_suspend')}")
+        self.btn_suspend.setObjectName("BtnSuspend")
         self.btn_suspend.setFixedHeight(36)
         self.btn_suspend.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_suspend.clicked.connect(self._on_suspend)
 
         # Tier controls
         self.tier_combo = QComboBox()
+        self.tier_combo.setObjectName("TierCombo")
         self.tier_combo.addItems(["STANDARD", "GOLD", "DIAMOND"])
         self.tier_combo.setFixedHeight(36)
         self.tier_combo.setFixedWidth(130)
 
         self.btn_set_tier = QPushButton(f"🏆  {self.lang_manager.get_text('admin_set_tier')}")
+        self.btn_set_tier.setObjectName("BtnSetTier")
         self.btn_set_tier.setFixedHeight(36)
         self.btn_set_tier.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_set_tier.clicked.connect(self._on_set_tier)
@@ -189,6 +201,7 @@ class AdminUserDetailCard(QFrame):
 
         # Empty state label
         self.empty_label = QLabel(self.lang_manager.get_text("admin_select_user"))
+        self.empty_label.setObjectName("UserDetailEmptyLabel")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.empty_label)
 
@@ -308,6 +321,15 @@ class AdminUserDetailCard(QFrame):
             self.lang_manager.get_text("admin_confirm_suspend").replace("{user}", username)
         ):
             return
+
+        sec_dialog = AdminSecurityDialog(self, f"suspend user {username}")
+        if sec_dialog.exec() == QDialog.DialogCode.Accepted:
+            if not AuthService.login_user("admin", sec_dialog.get_password()):
+                QMessageBox.critical(self, "Security Error", "Invalid admin password.")
+                return
+        else:
+            return
+
         success, msg = AdminUserService.update_account_status(username, "SUSPENDED")
         self._show_result(success, msg)
         if success:

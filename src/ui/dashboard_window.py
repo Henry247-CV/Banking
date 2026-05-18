@@ -7,8 +7,9 @@ from PyQt6.QtWidgets import (
     QLabel,
     QFrame,
     QPushButton,
+    QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from src.core.theme import *
 from src.core.styles import *
 from src.core.utils import safe_text
@@ -23,6 +24,8 @@ from src.ui.tabs.settings_tab import SettingsTab
 from src.core.language_manager import LanguageManager
 from src.core.theme_manager import ThemeManager
 from src.core.styles import get_styles
+from src.services.notification_service import NotificationService
+from src.security import security_rules
 
 class DashboardWindow(QMainWindow):
     logout_requested = pyqtSignal()
@@ -32,6 +35,7 @@ class DashboardWindow(QMainWindow):
         self.user_data = user_data
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
+        self.notification_service = NotificationService()
 
         self.setWindowTitle("Đăng Khoa Bank - Premium Desktop")
         self.resize(1240, 780)
@@ -44,6 +48,45 @@ class DashboardWindow(QMainWindow):
         self.setup_ui()
         self.update_theme()
         self.update_translations()
+        self.check_maintenance_alerts()
+        
+        # Session Timeout Tracking
+        from src.core.app_stabilizer import AppStabilizer
+        timeout_ms = security_rules.SESSION_TIMEOUT_MINUTES * 60 * 1000
+        self.activity_timer = AppStabilizer().create_safe_timer(
+            parent=self, 
+            interval_ms=timeout_ms, 
+            callback=self.handle_session_timeout
+        )
+        self.activity_timer.start(timeout_ms)
+        
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """Track user activity to reset session timeout."""
+        if event.type() in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress, QEvent.Type.KeyPress):
+            if hasattr(self, 'activity_timer'):
+                self.activity_timer.start() # Reset timer
+        return super().eventFilter(obj, event)
+
+    def handle_session_timeout(self):
+        """Handle auto-logout due to inactivity."""
+        self.activity_timer.stop()
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance().removeEventFilter(self)
+        QMessageBox.warning(self, "Session Expired", "Your session has expired due to inactivity. Please log in again.")
+        self.logout_requested.emit()
+        self.close()
+
+    def check_maintenance_alerts(self):
+        alerts = self.notification_service.get_active_maintenance_alerts()
+        if alerts:
+            self.maintenance_banner.setVisible(True)
+            alert = alerts[0]
+            self.maintenance_lbl.setText(f"🚧 {alert[0]}: {alert[1]}")
+        else:
+            self.maintenance_banner.setVisible(False)
 
     def update_theme(self):
         styles = get_styles()
@@ -53,6 +96,14 @@ class DashboardWindow(QMainWindow):
         self.username_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: bold; border: none; background: transparent;")
         self.acc_label.setStyleSheet(f"color: {theme.CYAN}; font-size: 11px; font-weight: 600; border: none; background: transparent;")
         
+        self.maintenance_banner.setStyleSheet(f"""
+            QFrame {{
+                background-color: {theme.ORANGE}20;
+                border-bottom: 1px solid {theme.ORANGE}50;
+            }}
+        """)
+        self.maintenance_lbl.setStyleSheet(f"color: {theme.ORANGE}; font-weight: bold; font-size: 13px; background: transparent; border: none;")
+
         # Refresh all tabs theme
         for i in range(self.stack.count()):
             widget = self.stack.widget(i)
@@ -166,6 +217,17 @@ class DashboardWindow(QMainWindow):
         header_layout.addLayout(user_info_layout)
 
         self.content_layout.addWidget(self.header)
+
+        # Maintenance Banner
+        self.maintenance_banner = QFrame()
+        self.maintenance_banner.setFixedHeight(40)
+        banner_layout = QHBoxLayout(self.maintenance_banner)
+        banner_layout.setContentsMargins(40, 0, 40, 0)
+        
+        self.maintenance_lbl = QLabel("")
+        banner_layout.addWidget(self.maintenance_lbl)
+        self.maintenance_banner.setVisible(False)
+        self.content_layout.addWidget(self.maintenance_banner)
 
         # Stacked Pages
         self.stack = QStackedWidget()

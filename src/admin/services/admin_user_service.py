@@ -6,6 +6,7 @@ update account status (ACTIVE/FROZEN/SUSPENDED), and manage tiers.
 
 from src.database.database import get_db_connection
 from src.services.notification_service import NotificationService
+from src.admin.services.security_service import SecurityService
 from datetime import datetime
 
 
@@ -176,6 +177,9 @@ class AdminUserService:
             )
             conn.commit()
 
+            # Log admin action
+            SecurityService.log_admin_action("admin", f"UPDATE_STATUS_{new_status}", f"User:{username}")
+
             # Create notification for user
             status_messages = {
                 "ACTIVE": "Your account has been reactivated. All services are now available.",
@@ -245,6 +249,9 @@ class AdminUserService:
                 (new_tier, username)
             )
             conn.commit()
+
+            # Log admin action
+            SecurityService.log_admin_action("admin", "UPDATE_TIER", f"User:{username}, Tier:{new_tier}")
 
             # Determine direction
             old_idx = AdminUserService.TIER_ORDER.index(old_tier) if old_tier in AdminUserService.TIER_ORDER else 0

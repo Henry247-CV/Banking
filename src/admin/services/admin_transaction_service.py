@@ -6,7 +6,7 @@ for the admin transaction control center.
 
 from src.database.database import get_db_connection
 from src.services.notification_service import NotificationService
-
+from src.admin.services.security_service import SecurityService
 
 class AdminTransactionService:
     """Service layer for admin transaction management."""
@@ -131,6 +131,11 @@ class AdminTransactionService:
                 (1 if flagged else 0, txn_id)
             )
             conn.commit()
+            
+            # Log admin action
+            action_type = "FLAG_TRANSACTION" if flagged else "UNFLAG_TRANSACTION"
+            SecurityService.log_admin_action("admin", action_type, f"TxID:{txn_id}")
+            
             action = "flagged" if flagged else "unflagged"
             return True, f"Transaction #{txn_id} {action}."
         except Exception as e:
@@ -166,6 +171,9 @@ class AdminTransactionService:
                 (new_status, txn_id)
             )
             conn.commit()
+
+            # Log admin action
+            SecurityService.log_admin_action("admin", f"UPDATE_REVIEW_{new_status}", f"TxID:{txn_id}")
 
             # If blocking, also notify the sender
             if new_status == "BLOCKED":
@@ -205,6 +213,10 @@ class AdminTransactionService:
                 (risk_level, txn_id)
             )
             conn.commit()
+            
+            # Log admin action
+            SecurityService.log_admin_action("admin", "UPDATE_RISK_LEVEL", f"TxID:{txn_id}, Risk:{risk_level}")
+            
             return True, f"Risk level set to {risk_level}."
         except Exception as e:
             return False, f"Error: {str(e)}"

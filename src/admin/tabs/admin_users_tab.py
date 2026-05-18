@@ -49,6 +49,7 @@ class AdminUsersTab(QWidget):
         super().__init__()
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
+        self.setObjectName("AdminUsersTab")
         self._all_users = []
         self._setup_ui()
         self.update_theme()
@@ -61,17 +62,20 @@ class AdminUsersTab(QWidget):
 
         # Use a splitter for table + detail panel
         splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setObjectName("AdminUsersSplitter")
         splitter.setHandleWidth(2)
         splitter.setChildrenCollapsible(False)
 
         # ── Top section: search + filters + table ──
         top_widget = QWidget()
+        top_widget.setObjectName("AdminUsersTopWidget")
         top_layout = QVBoxLayout(top_widget)
         top_layout.setContentsMargins(28, 20, 28, 8)
         top_layout.setSpacing(12)
 
         # Section title
         self.section_title = QLabel(self.lang_manager.get_text("admin_users_management"))
+        self.section_title.setObjectName("AdminUsersSectionTitle")
         top_layout.addWidget(self.section_title)
 
         # Search + Filters row
@@ -79,6 +83,7 @@ class AdminUsersTab(QWidget):
         filters_row.setSpacing(10)
 
         self.search_input = QLineEdit()
+        self.search_input.setObjectName("AdminUsersSearch")
         self.search_input.setPlaceholderText(
             f"🔍  {self.lang_manager.get_text('admin_search_users')}"
         )
@@ -86,6 +91,7 @@ class AdminUsersTab(QWidget):
         self.search_input.textChanged.connect(self._apply_filters)
 
         self.status_filter = QComboBox()
+        self.status_filter.setObjectName("AdminUsersStatusFilter")
         self.status_filter.addItems([
             "All Status", "ACTIVE", "FROZEN", "SUSPENDED"
         ])
@@ -94,6 +100,7 @@ class AdminUsersTab(QWidget):
         self.status_filter.currentTextChanged.connect(self._apply_filters)
 
         self.tier_filter = QComboBox()
+        self.tier_filter.setObjectName("AdminUsersTierFilter")
         self.tier_filter.addItems([
             "All Tiers", "STANDARD", "GOLD", "DIAMOND"
         ])
@@ -102,6 +109,7 @@ class AdminUsersTab(QWidget):
         self.tier_filter.currentTextChanged.connect(self._apply_filters)
 
         self.refresh_btn = QPushButton(f"🔄  {self.lang_manager.get_text('admin_refresh')}")
+        self.refresh_btn.setObjectName("AdminUsersRefreshBtn")
         self.refresh_btn.setFixedHeight(38)
         self.refresh_btn.setFixedWidth(110)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -115,10 +123,13 @@ class AdminUsersTab(QWidget):
 
         # Count label
         self.count_label = QLabel("0 users")
+        self.count_label.setObjectName("AdminUsersCountLabel")
         top_layout.addWidget(self.count_label)
 
+        from src.design.component_factory import BaseTable
         # Users table (7 columns now)
-        self.users_table = QTableWidget(0, self.NUM_COLS)
+        self.users_table = BaseTable(0, self.NUM_COLS)
+        self.users_table.setObjectName("AdminUsersTable")
         self.users_table.setHorizontalHeaderLabels([
             self.lang_manager.get_text("username"),
             self.lang_manager.get_text("phone"),
@@ -128,12 +139,6 @@ class AdminUsersTab(QWidget):
             "Status",
             self.lang_manager.get_text("admin_created_at"),
         ])
-        self.users_table.verticalHeader().setVisible(False)
-        self.users_table.setShowGrid(False)
-        self.users_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.users_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.users_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.users_table.setMouseTracking(True)
         self.users_table.setMinimumHeight(200)
 
         header = self.users_table.horizontalHeader()
@@ -330,38 +335,7 @@ class AdminUsersTab(QWidget):
             background: transparent;
         """)
 
-        table_style = f"""
-            QTableWidget {{
-                background-color: {theme.CARD_BG};
-                color: {theme.TEXT_PRIMARY};
-                gridline-color: transparent;
-                border: 1px solid {theme.BORDER};
-                border-radius: 10px;
-                font-size: 12px;
-            }}
-            QTableWidget::item {{
-                padding: 8px 12px;
-                border-bottom: 1px solid {theme.BORDER};
-            }}
-            QTableWidget::item:selected {{
-                background-color: {theme.PANEL_BG};
-                color: {theme.CYAN};
-            }}
-            QTableWidget::item:hover {{
-                background-color: {theme.PANEL_BG};
-            }}
-            QHeaderView::section {{
-                background-color: {theme.PANEL_BG};
-                color: {theme.TEXT_SECONDARY};
-                padding: 8px 12px;
-                border: none;
-                border-bottom: 2px solid {theme.BORDER};
-                font-weight: 700;
-                font-size: 11px;
-                letter-spacing: 0.5px;
-            }}
-        """
-        self.users_table.setStyleSheet(table_style)
+        self.users_table.update_theme()
 
         # Splitter handle style
         self._splitter.setStyleSheet(f"""

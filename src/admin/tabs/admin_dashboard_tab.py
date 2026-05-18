@@ -35,6 +35,8 @@ from src.admin.components.report_summary_card import (
     RiskMonitoringCard, SystemHealthCard, RecentActivityCard,
 )
 from src.admin.services.analytics_service import AnalyticsService
+from src.admin.services.notification_service import AdminNotificationService
+from src.admin.components.announcement_card import AnnouncementCard
 from src.core.utils import safe_currency
 
 
@@ -45,23 +47,27 @@ class AdminDashboardTab(QWidget):
         super().__init__()
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
+        self.setObjectName("AdminDashboardTab")
         self._setup_ui()
         self.update_theme()
         self.load_dashboard_data()
 
     def _setup_ui(self):
         scroll = QScrollArea()
+        scroll.setObjectName("AdminDashboardScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         content = QWidget()
+        content.setObjectName("AdminDashboardContent")
         self.main_layout = QVBoxLayout(content)
         self.main_layout.setContentsMargins(28, 24, 28, 24)
         self.main_layout.setSpacing(16)
 
         # ── Section 1: Overview Stat Cards ──
         self.overview_title = QLabel(self.lang_manager.get_text("admin_overview"))
+        self.overview_title.setObjectName("AdminDashboardSectionTitle_Overview")
         self.main_layout.addWidget(self.overview_title)
 
         cards_grid = QGridLayout()
@@ -72,21 +78,28 @@ class AdminDashboardTab(QWidget):
             value="0", trend_text="↑ Loading...", icon="👥",
             accent_color=theme.CYAN,
         )
+        self.card_total_users.setObjectName("StatCard_TotalUsers")
+        
         self.card_total_balance = AdminStatCard(
             title=self.lang_manager.get_text("admin_total_balance"),
             value="0 VND", trend_text="System total", icon="💰",
             accent_color=theme.GREEN,
         )
+        self.card_total_balance.setObjectName("StatCard_TotalBalance")
+
         self.card_monthly_volume = AdminStatCard(
             title=self.lang_manager.get_text("admin_monthly_volume"),
             value="0", trend_text="Last 30 days", icon="💹",
             accent_color=theme.ORANGE,
         )
+        self.card_monthly_volume.setObjectName("StatCard_MonthlyVolume")
+
         self.card_flagged = AdminStatCard(
             title=self.lang_manager.get_text("admin_flagged_count"),
             value="0", trend_text="Needs review", icon="🚩",
             accent_color=theme.RED,
         )
+        self.card_flagged.setObjectName("StatCard_Flagged")
 
         cards_grid.addWidget(self.card_total_users, 0, 0)
         cards_grid.addWidget(self.card_total_balance, 0, 1)
@@ -96,6 +109,7 @@ class AdminDashboardTab(QWidget):
 
         # ── Section 2: Analytics Charts (2x2 grid) ──
         self.charts_title = QLabel(self.lang_manager.get_text("admin_analytics_charts"))
+        self.charts_title.setObjectName("AdminDashboardSectionTitle_Charts")
         self.main_layout.addWidget(self.charts_title)
 
         charts_grid = QGridLayout()
@@ -107,6 +121,7 @@ class AdminDashboardTab(QWidget):
             title=self.lang_manager.get_text("admin_daily_transactions"),
             chart_widget=self.txn_bar_chart,
         )
+        self.chart_daily_txn.setObjectName("ChartCard_DailyTxn")
 
         # Tier Distribution Donut
         self.tier_donut = MiniDonutChart()
@@ -114,6 +129,7 @@ class AdminDashboardTab(QWidget):
             title=self.lang_manager.get_text("admin_tier_distribution"),
             chart_widget=self.tier_donut,
         )
+        self.chart_tier.setObjectName("ChartCard_Tier")
 
         # User Growth Bar Chart
         self.user_bar_chart = MiniBarChart()
@@ -121,6 +137,7 @@ class AdminDashboardTab(QWidget):
             title=self.lang_manager.get_text("admin_user_growth"),
             chart_widget=self.user_bar_chart,
         )
+        self.chart_user_growth.setObjectName("ChartCard_UserGrowth")
 
         # Risk Distribution Donut
         self.risk_donut = MiniDonutChart()
@@ -128,6 +145,7 @@ class AdminDashboardTab(QWidget):
             title=self.lang_manager.get_text("admin_risk_distribution"),
             chart_widget=self.risk_donut,
         )
+        self.chart_risk.setObjectName("ChartCard_Risk")
 
         charts_grid.addWidget(self.chart_daily_txn, 0, 0)
         charts_grid.addWidget(self.chart_tier, 0, 1)
@@ -135,16 +153,32 @@ class AdminDashboardTab(QWidget):
         charts_grid.addWidget(self.chart_risk, 1, 1)
         self.main_layout.addLayout(charts_grid)
 
-        # ── Section 3: Fraud Monitoring Overview ──
+        # ── Section 3: System Announcements ──
+        self.announcements_title = QLabel("System Announcements")
+        self.announcements_title.setObjectName("AdminDashboardSectionTitle_Announcements")
+        self.main_layout.addWidget(self.announcements_title)
+
+        self.announcements_container = QVBoxLayout()
+        self.announcements_container.setSpacing(8)
+        self.main_layout.addLayout(self.announcements_container)
+
+        self.no_announcements_lbl = QLabel("No announcements available.")
+        self.no_announcements_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.no_announcements_lbl)
+
+        # ── Section 4: Fraud Monitoring Overview ──
         self.risk_card = RiskMonitoringCard()
+        self.risk_card.setObjectName("RiskMonitoringCard")
         self.main_layout.addWidget(self.risk_card)
 
-        # ── Section 4: System Health ──
+        # ── Section 5: System Health ──
         self.health_card = SystemHealthCard()
+        self.health_card.setObjectName("SystemHealthCard")
         self.main_layout.addWidget(self.health_card)
 
-        # ── Section 5: Recent Activity ──
+        # ── Section 6: Recent Activity ──
         self.activity_card = RecentActivityCard()
+        self.activity_card.setObjectName("RecentActivityCard")
         self.main_layout.addWidget(self.activity_card)
 
         self.main_layout.addStretch()
@@ -212,8 +246,29 @@ class AdminDashboardTab(QWidget):
             activities = AnalyticsService.get_recent_activity(8)
             self.activity_card.set_data(activities)
 
+            # Announcements
+            self._load_announcements()
+
         except Exception as e:
             print(f"Admin dashboard data error: {e}")
+
+    def _load_announcements(self):
+        """Load recent global announcements."""
+        while self.announcements_container.count():
+            item = self.announcements_container.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+            
+        announcements = AdminNotificationService.get_recent_announcements(3)
+        if not announcements:
+            self.no_announcements_lbl.setVisible(True)
+        else:
+            self.no_announcements_lbl.setVisible(False)
+            for ann in announcements:
+                card = AnnouncementCard(
+                    title=ann[0], n_type=ann[1], priority=ann[2],
+                    time_str=str(ann[3])[:16], message=ann[4]
+                )
+                self.announcements_container.addWidget(card)
 
     def update_theme(self):
         theme.update_globals()
@@ -225,6 +280,9 @@ class AdminDashboardTab(QWidget):
         """
         self.overview_title.setStyleSheet(section_title_style)
         self.charts_title.setStyleSheet(section_title_style)
+        self.announcements_title.setStyleSheet(section_title_style)
+
+        self.no_announcements_lbl.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; padding: 20px;")
 
         # Stat cards
         for card in [self.card_total_users, self.card_total_balance,
@@ -244,6 +302,8 @@ class AdminDashboardTab(QWidget):
     def update_translations(self):
         self.overview_title.setText(self.lang_manager.get_text("admin_overview"))
         self.charts_title.setText(self.lang_manager.get_text("admin_analytics_charts"))
+        self.announcements_title.setText(self.lang_manager.get_text("admin_system_announcements"))
+        self.no_announcements_lbl.setText(self.lang_manager.get_text("admin_no_announcements"))
         self.chart_daily_txn.set_title(self.lang_manager.get_text("admin_daily_transactions"))
         self.chart_tier.set_title(self.lang_manager.get_text("admin_tier_distribution"))
         self.chart_user_growth.set_title(self.lang_manager.get_text("admin_user_growth"))

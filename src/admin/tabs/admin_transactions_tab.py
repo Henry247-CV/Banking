@@ -56,6 +56,7 @@ class AdminTransactionsTab(QWidget):
         super().__init__()
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
+        self.setObjectName("AdminTransactionsTab")
         self._all_transactions = []
         self._setup_ui()
         self.update_theme()
@@ -67,11 +68,13 @@ class AdminTransactionsTab(QWidget):
         outer_layout.setSpacing(0)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setObjectName("AdminTransactionsSplitter")
         splitter.setHandleWidth(2)
         splitter.setChildrenCollapsible(False)
 
         # ── Top: filters + table ──
         top_widget = QWidget()
+        top_widget.setObjectName("AdminTransactionsTopWidget")
         top_layout = QVBoxLayout(top_widget)
         top_layout.setContentsMargins(28, 20, 28, 8)
         top_layout.setSpacing(12)
@@ -80,6 +83,7 @@ class AdminTransactionsTab(QWidget):
         self.section_title = QLabel(
             self.lang_manager.get_text("admin_transactions_management")
         )
+        self.section_title.setObjectName("AdminTransactionsSectionTitle")
         top_layout.addWidget(self.section_title)
 
         # Filters row
@@ -87,6 +91,7 @@ class AdminTransactionsTab(QWidget):
         filters_row.setSpacing(8)
 
         self.search_input = QLineEdit()
+        self.search_input.setObjectName("AdminTransactionsSearch")
         self.search_input.setPlaceholderText(
             f"🔍  {self.lang_manager.get_text('admin_search_transactions')}"
         )
@@ -94,6 +99,7 @@ class AdminTransactionsTab(QWidget):
         self.search_input.textChanged.connect(self._apply_filters)
 
         self.status_filter = QComboBox()
+        self.status_filter.setObjectName("AdminTransactionsStatusFilter")
         self.status_filter.addItems([
             "All Status", "COMPLETED", "PENDING", "BLOCKED", "REVIEWING"
         ])
@@ -102,6 +108,7 @@ class AdminTransactionsTab(QWidget):
         self.status_filter.currentTextChanged.connect(self._apply_filters)
 
         self.risk_filter = QComboBox()
+        self.risk_filter.setObjectName("AdminTransactionsRiskFilter")
         self.risk_filter.addItems([
             "All Risk", "LOW", "MEDIUM", "HIGH", "CRITICAL"
         ])
@@ -110,6 +117,7 @@ class AdminTransactionsTab(QWidget):
         self.risk_filter.currentTextChanged.connect(self._apply_filters)
 
         self.date_filter = QComboBox()
+        self.date_filter.setObjectName("AdminTransactionsDateFilter")
         self.date_filter.addItems([
             "All Time", "Today", "Last 7 Days", "Last 30 Days"
         ])
@@ -120,6 +128,7 @@ class AdminTransactionsTab(QWidget):
         self.refresh_btn = QPushButton(
             f"🔄  {self.lang_manager.get_text('admin_refresh')}"
         )
+        self.refresh_btn.setObjectName("AdminTransactionsRefreshBtn")
         self.refresh_btn.setFixedHeight(38)
         self.refresh_btn.setFixedWidth(100)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -137,8 +146,11 @@ class AdminTransactionsTab(QWidget):
         stats_row.setSpacing(16)
 
         self.count_label = QLabel("0 transactions")
+        self.count_label.setObjectName("AdminTransactionsCountLabel")
         self.flagged_label = QLabel("🚩 0 flagged")
+        self.flagged_label.setObjectName("AdminTransactionsFlaggedLabel")
         self.critical_label = QLabel("⚠ 0 high risk")
+        self.critical_label.setObjectName("AdminTransactionsCriticalLabel")
 
         stats_row.addWidget(self.count_label)
         stats_row.addWidget(self.flagged_label)
@@ -146,8 +158,10 @@ class AdminTransactionsTab(QWidget):
         stats_row.addStretch()
         top_layout.addLayout(stats_row)
 
+        from src.design.component_factory import BaseTable
         # Transactions table (7 columns)
-        self.transactions_table = QTableWidget(0, self.NUM_COLS)
+        self.transactions_table = BaseTable(0, self.NUM_COLS)
+        self.transactions_table.setObjectName("AdminTransactionsTable")
         self.transactions_table.setHorizontalHeaderLabels([
             "ID",
             self.lang_manager.get_text("admin_sender"),
@@ -157,18 +171,6 @@ class AdminTransactionsTab(QWidget):
             "Status",
             "Risk",
         ])
-        self.transactions_table.verticalHeader().setVisible(False)
-        self.transactions_table.setShowGrid(False)
-        self.transactions_table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
-        )
-        self.transactions_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self.transactions_table.setSelectionMode(
-            QTableWidget.SelectionMode.SingleSelection
-        )
-        self.transactions_table.setMouseTracking(True)
         self.transactions_table.setMinimumHeight(200)
 
         header = self.transactions_table.horizontalHeader()
@@ -362,29 +364,7 @@ class AdminTransactionsTab(QWidget):
             border: none; background: transparent;
         """)
 
-        table_style = f"""
-            QTableWidget {{
-                background-color: {theme.CARD_BG}; color: {theme.TEXT_PRIMARY};
-                gridline-color: transparent; border: 1px solid {theme.BORDER};
-                border-radius: 10px; font-size: 12px;
-            }}
-            QTableWidget::item {{
-                padding: 8px 12px; border-bottom: 1px solid {theme.BORDER};
-            }}
-            QTableWidget::item:selected {{
-                background-color: {theme.PANEL_BG}; color: {theme.CYAN};
-            }}
-            QTableWidget::item:hover {{
-                background-color: {theme.PANEL_BG};
-            }}
-            QHeaderView::section {{
-                background-color: {theme.PANEL_BG}; color: {theme.TEXT_SECONDARY};
-                padding: 8px 12px; border: none;
-                border-bottom: 2px solid {theme.BORDER};
-                font-weight: 700; font-size: 11px; letter-spacing: 0.5px;
-            }}
-        """
-        self.transactions_table.setStyleSheet(table_style)
+        self.transactions_table.update_theme()
 
         self._splitter.setStyleSheet(f"""
             QSplitter::handle {{ background-color: {theme.BORDER}; }}

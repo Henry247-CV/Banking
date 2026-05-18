@@ -75,12 +75,12 @@ class AdminSidebar(QFrame):
         ("admin_dashboard", "📊"),
         ("admin_users", "👥"),
         ("admin_transactions", "💹"),
+        ("admin_reports", "📋"),
         ("admin_settings", "⚙️"),
     ]
 
     # Future placeholder items
     FUTURE_ITEMS = [
-        ("admin_reports", "📋"),
         ("admin_security", "🛡️"),
     ]
 
@@ -88,6 +88,7 @@ class AdminSidebar(QFrame):
         super().__init__()
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
+        self.setObjectName("AdminSidebar")
         self.setFixedWidth(220)
         self.buttons = []
         self._setup_ui()
@@ -98,14 +99,16 @@ class AdminSidebar(QFrame):
         layout.setContentsMargins(14, 24, 14, 20)
         layout.setSpacing(4)
 
-        # Brand Section — Admin badge
+        # Brand Section
         brand_container = QHBoxLayout()
         brand_container.setSpacing(10)
 
         self.brand_logo = QFrame()
+        self.brand_logo.setObjectName("AdminBrandLogo")
         self.brand_logo.setFixedSize(28, 28)
 
         self.brand_label = QLabel("DK Admin")
+        self.brand_label.setObjectName("AdminBrandLabel")
         brand_container.addWidget(self.brand_logo)
         brand_container.addWidget(self.brand_label)
         brand_container.addStretch()
@@ -115,35 +118,38 @@ class AdminSidebar(QFrame):
 
         # Admin badge
         self.admin_badge = QLabel("CONTROL CENTER")
+        self.admin_badge.setObjectName("AdminControlBadge")
         self.admin_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.admin_badge)
         layout.addSpacing(20)
 
-        # Section label
-        self.nav_section_label = QLabel("NAVIGATION")
+        # Section labels
+        self.nav_section_label = QLabel(self.lang_manager.get_text("admin_navigation"))
+        self.nav_section_label.setObjectName("AdminNavSectionLabel")
         layout.addWidget(self.nav_section_label)
         layout.addSpacing(6)
 
         # Navigation Buttons
         for i, (key, icon) in enumerate(self.NAV_ITEMS):
             btn = AdminSidebarButton(key, icon, is_active=(i == 0))
+            btn.setObjectName(f"AdminNavBtn_{key}")
             btn.clicked.connect(lambda checked, index=i: self._handle_nav_click(index))
             layout.addWidget(btn)
             self.buttons.append(btn)
 
         layout.addSpacing(16)
 
-        # Future placeholders section
-        self.future_section_label = QLabel("COMING SOON")
+        self.future_section_label = QLabel(self.lang_manager.get_text("admin_coming_soon"))
+        self.future_section_label.setObjectName("AdminFutureSectionLabel")
         layout.addWidget(self.future_section_label)
         layout.addSpacing(6)
 
         self.future_buttons = []
         for key, icon in self.FUTURE_ITEMS:
             btn = QPushButton(f"{icon}  {self.lang_manager.get_text(key)}")
+            btn.setObjectName(f"AdminFutureBtn_{key}")
             btn.setFixedHeight(36)
             btn.setEnabled(False)
-            btn.setCursor(Qt.CursorShape.ForbiddenCursor)
             layout.addWidget(btn)
             self.future_buttons.append((btn, key))
 
@@ -151,6 +157,7 @@ class AdminSidebar(QFrame):
 
         # Logout
         self.logout_btn = QPushButton(f"🚪  {self.lang_manager.get_text('logout')}")
+        self.logout_btn.setObjectName("AdminLogoutBtn")
         self.logout_btn.setFixedHeight(42)
         self.logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.logout_btn.clicked.connect(self.logout_requested.emit)
@@ -163,60 +170,59 @@ class AdminSidebar(QFrame):
 
     def update_theme(self):
         theme.update_globals()
-
-        # Sidebar background — darker than user sidebar for enterprise feel
-        sidebar_bg = theme.SIDEBAR_BG
-        if theme.ThemeManager().current_theme == "dark":
-            sidebar_bg = "#060E1A"  # Even darker for admin
         
         self.setStyleSheet(f"""
-            AdminSidebar {{
-                background-color: {sidebar_bg};
+            QFrame#AdminSidebar {{
+                background-color: {theme.SIDEBAR_BG};
                 border: none;
                 border-right: 1px solid {theme.BORDER};
             }}
+            QLabel#AdminBrandLabel {{
+                color: {theme.TEXT_PRIMARY};
+                font-size: 16px;
+                font-weight: 800;
+            }}
+            QFrame#AdminBrandLogo {{
+                background-color: {theme.CYAN};
+                border-radius: 6px;
+            }}
+            QLabel#AdminControlBadge {{
+                color: {theme.CYAN};
+                font-size: 9px;
+                font-weight: 700;
+                letter-spacing: 2px;
+                padding: 4px 8px;
+                border: 1px solid {theme.BORDER};
+                border-radius: 4px;
+                background-color: {theme.PANEL_BG};
+            }}
+            QLabel#AdminNavSectionLabel, QLabel#AdminFutureSectionLabel {{
+                color: {theme.TEXT_SECONDARY};
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                padding-left: 4px;
+            }}
+            QPushButton#AdminLogoutBtn {{
+                background-color: {theme.PANEL_BG};
+                color: {theme.RED};
+                border: 1px solid {theme.BORDER};
+                border-radius: 8px;
+                padding-left: 16px;
+                font-size: 13px;
+                font-weight: 600;
+                text-align: left;
+            }}
+            QPushButton#AdminLogoutBtn:hover {{
+                background-color: {theme.RED};
+                color: white;
+                border: 1px solid {theme.RED};
+            }}
         """)
-
-        self.brand_label.setStyleSheet(f"""
-            color: {theme.TEXT_PRIMARY};
-            font-size: 16px;
-            font-weight: 800;
-            border: none;
-            background: transparent;
-        """)
-
-        self.brand_logo.setStyleSheet(f"""
-            background-color: {theme.CYAN};
-            border-radius: 6px;
-        """)
-
-        self.admin_badge.setStyleSheet(f"""
-            color: {theme.CYAN};
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 2px;
-            padding: 4px 8px;
-            border: 1px solid {theme.BORDER};
-            border-radius: 4px;
-            background-color: {theme.PANEL_BG};
-        """)
-
-        section_style = f"""
-            color: {theme.TEXT_SECONDARY};
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            border: none;
-            background: transparent;
-            padding-left: 4px;
-        """
-        self.nav_section_label.setStyleSheet(section_style)
-        self.future_section_label.setStyleSheet(section_style)
 
         for btn in self.buttons:
             btn.update_style()
 
-        # Future placeholder buttons — muted style
         for btn, key in self.future_buttons:
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -230,25 +236,10 @@ class AdminSidebar(QFrame):
                 }}
             """)
 
-        self.logout_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {theme.PANEL_BG};
-                color: {theme.RED};
-                border: 1px solid {theme.BORDER};
-                border-radius: 8px;
-                padding-left: 16px;
-                font-size: 13px;
-                font-weight: 600;
-                text-align: left;
-            }}
-            QPushButton:hover {{
-                background-color: {theme.RED};
-                color: white;
-                border: 1px solid {theme.RED};
-            }}
-        """)
-
     def update_translations(self):
+        self.nav_section_label.setText(self.lang_manager.get_text("admin_navigation"))
+        self.future_section_label.setText(self.lang_manager.get_text("admin_coming_soon"))
+        
         for btn in self.buttons:
             if hasattr(btn, "update_translations"):
                 btn.update_translations()

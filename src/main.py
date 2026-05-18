@@ -15,6 +15,8 @@ from src.core.language_manager import LanguageManager
 from src.core.theme_manager import ThemeManager
 from src.core.styles import get_styles
 from src.core.utils import cleanup_leftover_files
+from src.core.exception_handler import GlobalExceptionHandler
+from src.core.app_stabilizer import AppStabilizer
 
 class BankingApp(QStackedWidget):
     def __init__(self):
@@ -98,6 +100,9 @@ class BankingApp(QStackedWidget):
             self.dashboard_window = None
 
 def main():
+    # Install global exception handler first
+    GlobalExceptionHandler.install()
+
     # Initialize Database
     init_db()
 
@@ -105,11 +110,18 @@ def main():
     cleanup_leftover_files()
 
     app = QApplication(sys.argv)
+    
+    # Initialize the App Stabilizer
+    stabilizer = AppStabilizer()
 
     window = BankingApp()
     window.show()
 
-    sys.exit(app.exec())
+    ret = app.exec()
+    
+    # Clean up before exit
+    stabilizer.safe_shutdown()
+    sys.exit(ret)
 
 if __name__ == "__main__":
     main()
