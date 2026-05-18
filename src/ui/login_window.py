@@ -157,9 +157,18 @@ class LoginWindow(QWidget):
             return
         user_data = self.auth_service.login_user(username, password)
         if user_data:
+            # Check for account status errors (suspended)
+            if isinstance(user_data, dict) and user_data.get("error"):
+                error_key = user_data["error"]
+                if error_key == "suspended":
+                    self.show_error(self.lang_manager.get_text("admin_account_suspended_warning"))
+                else:
+                    self.show_error(user_data.get("message", "Account error."))
+                return
+
             self.error_label.hide()
-            code = self.auth_service.generate_verification_code()
-            dialog = VerificationDialog(code, self)
+            code, file_path = self.auth_service.generate_verification_code()
+            dialog = VerificationDialog(code, file_path, self)
             if dialog.exec():
                 QMessageBox.information(self, "Đăng Khoa Bank", self.lang_manager.get_text("login_successful"))
                 self.login_success.emit(user_data)

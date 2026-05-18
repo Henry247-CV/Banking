@@ -13,10 +13,23 @@ class TransferService:
         cursor = conn.cursor()
         
         try:
-            # 1. Check sender balance
-            cursor.execute("SELECT balance FROM users WHERE username = ?", (sender_username,))
+            # 0. Check account status — block frozen/suspended accounts
+            cursor.execute(
+                "SELECT balance, account_status FROM users WHERE username = ?",
+                (sender_username,)
+            )
             user_row = cursor.fetchone()
-            if not user_row or user_row[0] < amount:
+            if not user_row:
+                return False, "User not found."
+            
+            account_status = user_row[1] if user_row[1] else "ACTIVE"
+            if account_status == "FROZEN":
+                return False, "Your account is temporarily frozen. Transfers are disabled."
+            if account_status == "SUSPENDED":
+                return False, "Your account has been suspended. Please contact support."
+            
+            # 1. Check sender balance
+            if user_row[0] < amount:
                 return False, "Insufficient balance."
 
             new_balance = user_row[0] - amount

@@ -6,15 +6,18 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
     QFrame,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt
 from src.core.theme import *
 from src.core.styles import *
+from src.core.utils import safe_delete_temp_file
 
 class ActivationDialog(QDialog):
-    def __init__(self, expected_code, parent=None):
+    def __init__(self, expected_code, file_path=None, parent=None):
         super().__init__(parent)
         self.expected_code = expected_code
+        self.file_path = file_path
         self.verified = False
 
         self.setWindowTitle("Đăng Khoa Bank - Account Activation")
@@ -78,6 +81,10 @@ class ActivationDialog(QDialog):
         input_code = self.code_input.text().strip()
         if input_code == self.expected_code:
             self.verified = True
+            # Delete the temporary file
+            if self.file_path:
+                safe_delete_temp_file(self.file_path)
+                QMessageBox.information(self, "Activation Successful", "Activation completed successfully.\nTemporary TXT file deleted.")
             self.accept()
         else:
             self.error_label.setText("Invalid activation code.")

@@ -207,10 +207,10 @@ class RegisterWindow(QWidget):
             return
 
         # Generate activation code and TXT
-        code = self.auth_service.generate_activation_code()
+        code, file_path = self.auth_service.generate_activation_code()
         
         # Show activation dialog
-        dialog = ActivationDialog(code, self)
+        dialog = ActivationDialog(code, file_path, self)
         if dialog.exec():
             # If code verified, perform database insertion
             if self.auth_service.register_user(username, password, full_name, phone, cccd, email):

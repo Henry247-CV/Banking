@@ -4,11 +4,18 @@ from datetime import datetime
 from pathlib import Path
 from src.database.database import get_db_connection
 from src.services.notification_service import NotificationService
+from src.admin.services.security_service import SecurityService
 
 class AuthService:
     @staticmethod
     def login_user(username, password):
-        """Checks if the username and password match. Returns user dict or None."""
+        """Checks if the username and password match. Returns user dict or None.
+        
+        Account status enforcement:
+        - SUSPENDED: login blocked, returns special error dict
+        - FROZEN: login allowed, but flag is set in returned data
+        - ACTIVE: normal login
+        """
         conn = get_db_connection()
         if not conn: return None
         
@@ -19,9 +26,40 @@ class AuthService:
                 (username, password)
             )
             user_row = cursor.fetchone()
-            return dict(user_row) if user_row else None
+            if not user_row:
+                # Track failed attempt
+                SecurityService.track_login_attempt(username, "FAILED")
+                return None
+            
+            user_data = dict(user_row)
+            
+            # Check account status
+            account_status = user_data.get("account_status", "ACTIVE") or "ACTIVE"
+            
+            if account_status == "SUSPENDED":
+                SecurityService.track_login_attempt(username, "BLOCKED")
+                return {"error": "suspended", "message": "Your account has been suspended."}
+            
+            # Update last_login timestamp and log success
+            try:
+                cursor.execute(
+                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = ?",
+                    (username,)
+                )
+                conn.commit()
+            except Exception:
+                pass  # Non-critical, don't block login
+                
+            SecurityService.track_login_attempt(username, "SUCCESS")
+            # Create active session and attach token
+            token = SecurityService.create_session(username)
+            if token:
+                user_data["session_token"] = token
+            
+            return user_data
         except Exception as e:
             print(f"Login error: {e}")
+            SecurityService.track_login_attempt(username, "ERROR")
             return None
         finally:
             conn.close()
@@ -69,7 +107,7 @@ class AuthService:
         code = str(random.randint(100000, 999999))
         desktop_path = Path.home() / "Desktop"
         file_path = desktop_path / f"verification_{code}.txt"
-        
+
         content = f"""ĐĂNG KHOA BANK VERIFICATION CODE\n\nYour login verification code:\n\n{code}\n\nDo not share this code."""
         try:
             with open(file_path, "w", encoding="utf-8") as f:
@@ -77,14 +115,14 @@ class AuthService:
             if os.name == 'nt': os.startfile(file_path)
         except Exception as e:
             print(f"File error: {e}")
-        return code
+        return code, file_path
 
     @staticmethod
     def generate_activation_code():
         code = str(random.randint(100000, 999999))
         desktop_path = Path.home() / "Desktop"
         file_path = desktop_path / f"activation_{code}.txt"
-        
+
         content = f"""ĐĂNG KHOA BANK ACTIVATION CODE\n\nWelcome to Đăng Khoa Bank\n\nYour activation code:\n\n{code}\n\nPlease enter this code to activate your account."""
         try:
             with open(file_path, "w", encoding="utf-8") as f:
@@ -92,8 +130,7 @@ class AuthService:
             if os.name == 'nt': os.startfile(file_path)
         except Exception as e:
             print(f"File error: {e}")
-        return code
-
+        return code, file_path
     @staticmethod
     def register_user(username, password, full_name, phone, cccd, email=""):
         """Registers a user with their phone number as the account number."""
