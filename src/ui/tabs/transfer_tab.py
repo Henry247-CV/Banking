@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QPushButton,
     QFileDialog,
+    QDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from src.core.theme import *
@@ -100,7 +101,9 @@ class TransferTab(QWidget):
         history_layout.addSpacing(20)
 
         self.trans_table = TransactionTable(rows=5, cols=5)
+        self.trans_table.transaction_selected.connect(self.show_receipt_detail)
         history_layout.addWidget(self.trans_table)
+
 
         self.container_layout.addWidget(self.history_container)
         self.container_layout.addStretch()
@@ -185,16 +188,23 @@ class TransferTab(QWidget):
         if success:
             self.user_data['balance'] -= amount
             
-            # Generate and open bill
-            self.transfer_service.generate_transfer_bill(
-                self.user_data['username'],
-                data['bank'],
-                data['account'],
-                amount,
-                data['note']
-            )
+            # Show Visual UI Receipt instead of just TXT file
+            from src.ui.dialogs.transfer_receipt_dialog import TransferReceiptDialog
+            from datetime import datetime
+            
+            txn_data = {
+                'transaction_id': str(datetime.now().timestamp()).replace(".", ""),
+                'sender_username': self.user_data['username'],
+                'receiver_bank': data['bank'],
+                'receiver_account': receiver_id,
+                'amount': amount,
+                'note': data['note'],
+                'created_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            receipt = TransferReceiptDialog(txn_data, self)
+            receipt.exec()
 
-            QMessageBox.information(self, "Transfer Success", "The transaction has been processed. A bill has been generated on your Desktop.")
             self.transfer_form.clear_form()
             self.refresh_history()
             self.balance_updated.emit()
@@ -207,6 +217,11 @@ class TransferTab(QWidget):
         for t in transactions:
             formatted_trans.append((t[0], t[1], t[2], -t[3], t[4]))
         self.trans_table.load_data(formatted_trans)
+
+    def show_receipt_detail(self, txn_data):
+        from src.ui.dialogs.transfer_receipt_dialog import TransferReceiptDialog
+        receipt = TransferReceiptDialog(txn_data, self)
+        receipt.exec()
 
     def update_ui(self):
         self.refresh_history()

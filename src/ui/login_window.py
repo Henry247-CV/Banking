@@ -17,6 +17,9 @@ from src.ui.dialogs.verification_dialog import VerificationDialog
 from src.core.language_manager import LanguageManager
 from src.core.theme_manager import ThemeManager
 
+from pathlib import Path
+from PyQt6.QtGui import QPixmap
+
 class LoginWindow(QWidget):
     switch_to_register = pyqtSignal()
     login_success = pyqtSignal(dict)
@@ -27,7 +30,7 @@ class LoginWindow(QWidget):
         self.theme_manager = ThemeManager()
         self.auth_service = AuthService()
         
-        self.setWindowTitle("Đăng Khoa Bank - Login")
+        self.setWindowTitle("Đăng Khoa Bank")
         self.resize(1200, 720)
         self.setMinimumSize(1000, 650)
         
@@ -47,7 +50,10 @@ class LoginWindow(QWidget):
                 border-right: 1px solid {theme.BORDER};
             }}
         """)
-        self.logo_placeholder.setStyleSheet(f"background-color: {theme.CYAN}; border-radius: 40px;")
+        
+        # Logo styling
+        self.logo_label.setStyleSheet("border: none; background: transparent;")
+        
         self.branding_title.setStyleSheet(f"font-size: 36px; font-weight: bold; color: {theme.TEXT_PRIMARY};")
         self.branding_subtitle.setStyleSheet(f"font-size: 20px; color: {theme.TEXT_SECONDARY};")
         
@@ -85,13 +91,34 @@ class LoginWindow(QWidget):
         branding_layout.setContentsMargins(60, 60, 60, 60)
         branding_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignCenter)
 
-        self.logo_placeholder = QFrame()
-        self.logo_placeholder.setFixedSize(80, 80)
+        # Integrated Logo
+        self.logo_label = QLabel()
+        self.logo_label.setFixedSize(140, 140)
+        self.logo_label.setToolTip("Đăng Khoa Bank")
+        
+        # Safe image loading - Assets are inside src/assets
+        base_dir = Path(__file__).parent.parent
+        logo_path = base_dir / "assets" / "images" / "Login.png"
+        
+        pixmap = QPixmap(str(logo_path))
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(
+                140, 140, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.logo_label.setPixmap(scaled_pixmap)
+        else:
+            # Fallback
+            self.logo_label.setText("DKB")
+            self.logo_label.setStyleSheet(f"background-color: {theme.CYAN}; border-radius: 70px; color: white; font-weight: bold; font-size: 40px;")
+            self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.branding_title = QLabel("Đăng Khoa Bank")
         self.branding_subtitle = QLabel("")
         self.branding_subtitle.setWordWrap(True)
 
-        branding_layout.addWidget(self.logo_placeholder)
+        branding_layout.addWidget(self.logo_label)
         branding_layout.addSpacing(40)
         branding_layout.addWidget(self.branding_title)
         branding_layout.addWidget(self.branding_subtitle)

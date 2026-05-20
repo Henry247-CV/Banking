@@ -10,9 +10,14 @@ from PyQt6.QtGui import QFont
 from src.core.theme import *
 from src.core.styles import *
 
+from PyQt6.QtCore import Qt, pyqtSignal
+
 class NotificationCard(QFrame):
+    clicked = pyqtSignal()
+
     def __init__(self, title, message, timestamp, is_read=False, priority="LOW", n_type="INFO"):
         super().__init__()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.is_read = is_read
         self.title = title
         self.message = message
@@ -21,6 +26,10 @@ class NotificationCard(QFrame):
         self.n_type = n_type
         self.setup_ui()
         self.update_theme()
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
     def update_theme(self):
         theme.update_globals()

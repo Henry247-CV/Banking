@@ -9,11 +9,34 @@ from src.core.theme import *
 from src.core.styles import *
 from src.design.component_factory import BaseTable
 
+from PyQt6.QtCore import Qt, pyqtSignal
+
 class TransactionTable(BaseTable):
+    transaction_selected = pyqtSignal(dict)
+
     def __init__(self, rows=5, cols=5):
         super().__init__(rows, cols)
         self.setHorizontalHeaderLabels(["Date", "Bank", "Account", "Amount", "Status"])
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.itemDoubleClicked.connect(self.handle_double_click)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_theme()
+
+    def handle_double_click(self, item):
+        row = item.row()
+        # Retrieve data from table items or keep the raw data somewhere
+        # For simplicity, we'll extract from items since we don't store raw data here
+        txn_data = {
+            'created_at': self.item(row, 0).text(),
+            'receiver_bank': self.item(row, 1).text(),
+            'receiver_account': self.item(row, 2).text(),
+            'amount': abs(float(self.item(row, 3).text().replace("VND", "").replace(",", ""))),
+            'status': self.item(row, 4).text(),
+            'transaction_type': 'TRANSFER', # Default
+            'transaction_id': f"TXN-{self.item(row, 0).text().replace(' ', '').replace(':', '').replace('-', '')}"
+        }
+        self.transaction_selected.emit(txn_data)
 
     def update_theme(self):
         super().update_theme()
@@ -61,7 +84,12 @@ class TransactionTable(BaseTable):
             
             amount_item = QTableWidgetItem(formatted_amount)
             amount_item.setForeground(QColor(color))
-            amount_item.setFont(Qt.FontWeight.Bold)
+            
+            # Fix: set font weight correctly for PyQt6
+            font = amount_item.font()
+            font.setBold(True)
+            amount_item.setFont(font)
+            
             self.setItem(row, 3, amount_item)
 
             # Status

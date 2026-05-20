@@ -46,7 +46,7 @@ class AdminWindow(QMainWindow):
         self.theme_manager = ThemeManager()
 
         self.setObjectName("AdminWindow")
-        self.setWindowTitle("Đăng Khoa Bank — Admin Control Center")
+        self.setWindowTitle("Đăng Khoa Bank Admin")
         self.resize(1280, 800)
         self.setMinimumSize(1000, 680)
 

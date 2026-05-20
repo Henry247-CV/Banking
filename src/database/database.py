@@ -7,8 +7,12 @@ DB_PATH = "bank.db"
 def init_db():
     """Initializes the database and creates all required tables with safe migrations."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=20)
         cursor = conn.cursor()
+        
+        # Optimize for concurrency
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
 
         # 1. Users Table
         cursor.execute("""
@@ -74,16 +78,88 @@ def init_db():
                 except sqlite3.OperationalError as e:
                     print(f"Notification migration notice: {e}")
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS savings (
+        CREATE TABLE IF NOT EXISTS savings_accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
-            goal_name TEXT NOT NULL,
+            plan_name TEXT NOT NULL,
+            savings_type TEXT DEFAULT 'FLEXIBLE', -- FLEXIBLE or FIXED
             target_amount REAL NOT NULL,
             current_amount REAL DEFAULT 0,
-            status TEXT DEFAULT 'ACTIVE',
+            interest_rate REAL DEFAULT 0.05,
+            duration_months INTEGER DEFAULT 12,
+            start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            end_date DATETIME,
+            status TEXT DEFAULT 'ACTIVE', -- ACTIVE, COMPLETED, LOCKED, CANCELLED
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS savings_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            savings_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            type TEXT NOT NULL, -- DEPOSIT, WITHDRAWAL, INTEREST
+            amount REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (savings_id) REFERENCES savings_accounts (id)
+        )
+        """)
+
+        # Safe migrations: savings_accounts table columns
+        cursor.execute("PRAGMA table_info(savings_accounts)")
+        savings_columns = [column[1] for column in cursor.fetchall()]
+
+        # Migration: Rename savings_id to id if it exists (legacy schema)
+        if "savings_id" in savings_columns and "id" not in savings_columns:
+            try:
+                cursor.execute("ALTER TABLE savings_accounts RENAME COLUMN savings_id TO id")
+                print("Migration: Renamed savings_accounts.savings_id to id")
+                # Refresh columns list
+                cursor.execute("PRAGMA table_info(savings_accounts)")
+                savings_columns = [column[1] for column in cursor.fetchall()]
+            except sqlite3.OperationalError as e:
+                print(f"Savings migration error (rename): {e}")
+
+        savings_column_updates = {
+            "interest_earned": "REAL DEFAULT 0",
+            "last_growth_update": "DATETIME",
+        }
+
+        for col, col_type in savings_column_updates.items():
+            if col not in savings_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE savings_accounts ADD COLUMN {col} {col_type}")
+                except sqlite3.OperationalError as e:
+                    print(f"Savings migration notice: {e}")
+
+        # Safe migrations: savings_transactions table columns
+        cursor.execute("PRAGMA table_info(savings_transactions)")
+        st_columns = [column[1] for column in cursor.fetchall()]
+        
+        # Migration: Rename transaction_type to type if it exists
+        if "transaction_type" in st_columns and "type" not in st_columns:
+            try:
+                cursor.execute("ALTER TABLE savings_transactions RENAME COLUMN transaction_type TO type")
+                print("Migration: Renamed savings_transactions.transaction_type to type")
+                # Refresh columns
+                cursor.execute("PRAGMA table_info(savings_transactions)")
+                st_columns = [column[1] for column in cursor.fetchall()]
+            except sqlite3.OperationalError as e:
+                print(f"Savings transactions migration error (rename): {e}")
+
+        if "username" not in st_columns:
+            try:
+                cursor.execute("ALTER TABLE savings_transactions ADD COLUMN username TEXT")
+                print("Migration: Added username column to savings_transactions")
+                # Backfill username from savings_accounts
+                cursor.execute("""
+                    UPDATE savings_transactions 
+                    SET username = (SELECT username FROM savings_accounts WHERE savings_accounts.id = savings_transactions.savings_id)
+                    WHERE username IS NULL
+                """)
+            except sqlite3.OperationalError as e:
+                print(f"Savings transactions migration notice: {e}")
 
         # 5. Admin Logs
         cursor.execute("""
@@ -201,8 +277,13 @@ def init_db():
 def get_db_connection():
     """Returns a connection to the sqlite database with optimized settings."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=20)
         conn.row_factory = sqlite3.Row
+        
+        # Ensure WAL mode is active for each connection for max concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        
         return conn
     except sqlite3.Error as e:
         print(f"Database connection error: {e}")

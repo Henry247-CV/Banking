@@ -38,6 +38,32 @@ class AnalyticsService:
             conn.close()
 
     @staticmethod
+    def get_total_savings_volume():
+        conn = get_db_connection()
+        if not conn: return 0
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COALESCE(SUM(current_amount), 0) FROM savings_accounts")
+            return cursor.fetchone()[0]
+        except Exception:
+            return 0
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_active_savings_count():
+        conn = get_db_connection()
+        if not conn: return 0
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM savings_accounts WHERE status = 'ACTIVE'")
+            return cursor.fetchone()[0]
+        except Exception:
+            return 0
+        finally:
+            conn.close()
+
+    @staticmethod
     def get_transaction_volume(days=30):
         """Get transaction count within last N days."""
         conn = get_db_connection()

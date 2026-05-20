@@ -1,172 +1,173 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QFrame, QProgressBar, QMessageBox, QDoubleSpinBox
+    QVBoxLayout, QHBoxLayout, QLabel, QDialog, 
+    QPushButton, QFrame, QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout,
+    QInputDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
-from datetime import datetime
-from src.core import theme
+from PyQt6.QtGui import QColor
+import src.core.theme as theme
+from src.core.styles import *
 from src.core.language_manager import LanguageManager
-from src.models.savings_model import SavingsAccount, SavingsType
+from src.core.utils import safe_currency
 from src.services.savings_service import SavingsService
+from src.core.app_stabilizer import AppStabilizer
 
 class SavingsDetailDialog(QDialog):
-    def __init__(self, username: str, plan: SavingsAccount, parent=None):
+    def __init__(self, account, parent=None):
         super().__init__(parent)
-        self.username = username
-        self.plan = plan
+        self.account = account
         self.lang_manager = LanguageManager()
+        self.setWindowTitle(account.plan_name)
+        self.setFixedSize(600, 700)
         self.setup_ui()
+        self.update_theme()
+        self.load_history()
+        
+        # Connect Actions
+        self.deposit_btn.clicked.connect(self.handle_deposit)
+        self.withdraw_btn.clicked.connect(self.handle_withdraw)
+
+        # Setup Auto-Refresh Timer (10 seconds)
+        self.refresh_timer = AppStabilizer().create_safe_timer(
+            parent=self, interval_ms=10000, callback=self.refresh_view
+        )
+        self.refresh_timer.start()
+
+    def handle_deposit(self):
+        amount, ok = QInputDialog.getDouble(
+            self, self.lang_manager.get_text("deposit"), 
+            self.lang_manager.get_text("enter_amount"), 
+            0, 0, 1000000000, 2
+        )
+        if ok and amount > 0:
+            success, msg = SavingsService.deposit(self.account.id, self.account.username, amount)
+            if success:
+                QMessageBox.information(self, "Success", msg)
+                self.refresh_view()
+            else:
+                QMessageBox.warning(self, "Error", msg)
+
+    def handle_withdraw(self):
+        amount, ok = QInputDialog.getDouble(
+            self, self.lang_manager.get_text("withdraw"), 
+            self.lang_manager.get_text("enter_amount"), 
+            0, 0, self.account.current_amount, 2
+        )
+        if ok and amount > 0:
+            success, msg = SavingsService.withdraw(self.account.id, self.account.username, amount)
+            if success:
+                QMessageBox.information(self, "Success", msg)
+                self.refresh_view()
+            else:
+                QMessageBox.warning(self, "Error", msg)
+
+    def refresh_view(self):
+        """Live update for the detail view."""
+        # 1. Fetch latest plan data
+        from src.services.savings_service import SavingsService
+        plans = SavingsService.get_user_savings(self.account.username)
+        for p in plans:
+            if p.id == self.account.id:
+                self.account = p
+                break
+        
+        # 2. Update labels
+        if hasattr(self, 'balance_val_lbl'):
+            self.balance_val_lbl.setText(safe_currency(self.account.current_amount))
+            
+        # 3. Reload History
         self.load_history()
 
     def setup_ui(self):
-        self.setWindowTitle(self.plan.plan_name)
-        self.setMinimumWidth(500)
-        self.setStyleSheet(f"background-color: {theme.PANEL_BG};")
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(30, 30, 30, 30)
+        self.layout.setSpacing(24)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(25, 25, 25, 25)
-        layout.setSpacing(20)
+        # Header Section
+        header = QHBoxLayout()
+        self.title_lbl = QLabel(self.account.plan_name)
+        header.addWidget(self.title_lbl)
+        header.addStretch()
+        self.status_badge = QLabel(self.account.status)
+        header.addWidget(self.status_badge)
+        self.layout.addLayout(header)
 
-        # Header Info
-        header_layout = QHBoxLayout()
-        title_label = QLabel(self.plan.plan_name)
-        title_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 24px; font-weight: 800;")
-        header_layout.addWidget(title_label)
-        header_layout.addStretch()
+        # Stats Grid
+        stats_layout = QGridLayout()
+        stats_layout.setSpacing(15)
         
-        status_label = QLabel(self.plan.status)
-        status_label.setStyleSheet(f"""
-            background-color: {theme.GREEN}22;
-            color: {theme.GREEN};
-            border-radius: 8px;
-            padding: 4px 12px;
-            font-size: 12px;
-            font-weight: bold;
-        """)
-        header_layout.addWidget(status_label)
-        layout.addLayout(header_layout)
-
-        # Progress Section
-        progress_card = QFrame()
-        progress_card.setStyleSheet(f"background-color: {theme.SIDEBAR_BG}; border-radius: 15px; border: 1px solid {theme.BORDER};")
-        p_layout = QVBoxLayout(progress_card)
-        p_layout.setContentsMargins(20, 20, 20, 20)
-
-        # Percent & Progress Bar
-        percentage = min(100, int((self.plan.current_amount / self.plan.target_amount) * 100)) if self.plan.target_amount > 0 else 0
-        p_header = QHBoxLayout()
-        p_header.addWidget(QLabel(f"{percentage}% Completed", styleSheet=f"color: {theme.TEXT_PRIMARY}; font-weight: bold; border:none;"))
-        p_header.addStretch()
-        p_header.addWidget(QLabel(f"{self.plan.current_amount:,.0f} / {self.plan.target_amount:,.0f} VND", styleSheet=f"color: {theme.TEXT_SECONDARY}; border:none;"))
-        p_layout.addLayout(p_header)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(percentage)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedHeight(12)
-        self.progress_bar.setStyleSheet(f"QProgressBar {{ background-color: {theme.BORDER}; border-radius: 6px; }} QProgressBar::chunk {{ background-color: {theme.CYAN}; border-radius: 6px; }}")
-        p_layout.addWidget(self.progress_bar)
+        # Store balance label for live updates
+        self.balance_val_lbl = self.add_stat(stats_layout, "current_balance", safe_currency(self.account.current_amount), 0, 0)
+        self.add_stat(stats_layout, "target_amount", safe_currency(self.account.target_amount), 0, 1)
+        self.add_stat(stats_layout, "interest_rate", f"{self.account.interest_rate*100}%", 1, 0)
+        self.add_stat(stats_layout, "maturity_date", str(self.account.end_date)[:10], 1, 1)
         
-        layout.addWidget(progress_card)
+        self.layout.addLayout(stats_layout)
 
-        # Action Buttons
-        action_layout = QHBoxLayout()
-        
-        self.deposit_amount = QDoubleSpinBox()
-        self.deposit_amount.setRange(10000, 100000000)
-        self.deposit_amount.setSingleStep(100000)
-        self.deposit_amount.setValue(500000)
-        self.deposit_amount.setStyleSheet(self.get_input_style())
-        action_layout.addWidget(self.deposit_amount)
-
-        deposit_btn = QPushButton(self.lang_manager.get_text("deposit_savings"))
-        deposit_btn.clicked.connect(self.handle_deposit)
-        deposit_btn.setStyleSheet(self.get_btn_style(theme.CYAN))
-        action_layout.addWidget(deposit_btn)
-
-        withdraw_btn = QPushButton(self.lang_manager.get_text("withdraw_savings"))
-        withdraw_btn.clicked.connect(self.handle_withdraw)
-        withdraw_btn.setStyleSheet(self.get_btn_style(theme.RED))
-        action_layout.addWidget(withdraw_btn)
-        
-        layout.addLayout(action_layout)
+        # Actions
+        actions = QHBoxLayout()
+        self.deposit_btn = QPushButton(self.lang_manager.get_text("deposit"))
+        self.withdraw_btn = QPushButton(self.lang_manager.get_text("withdraw"))
+        actions.addWidget(self.deposit_btn)
+        actions.addWidget(self.withdraw_btn)
+        self.layout.addLayout(actions)
 
         # History Table
-        layout.addWidget(QLabel(self.lang_manager.get_text("savings_history"), styleSheet=f"color: {theme.TEXT_PRIMARY}; font-weight: bold;"))
-        self.history_table = QTableWidget()
-        self.history_table.setColumnCount(3)
-        self.history_table.setHorizontalHeaderLabels([
-            self.lang_manager.get_text("admin_date"),
-            self.lang_manager.get_text("action"),
-            self.lang_manager.get_text("admin_amount")
-        ])
-        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.history_table.setStyleSheet(f"""
-            QTableWidget {{ background-color: transparent; border: none; color: {theme.TEXT_PRIMARY}; }}
-            QHeaderView::section {{ background-color: {theme.SIDEBAR_BG}; color: {theme.TEXT_SECONDARY}; border: none; padding: 10px; }}
-        """)
-        layout.addWidget(self.history_table)
+        self.history_title = QLabel(self.lang_manager.get_text("savings_history"))
+        self.layout.addWidget(self.history_title)
+        
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Date", "Action", "Amount"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.layout.addWidget(self.table)
 
-    def get_input_style(self):
-        return f"background-color: {theme.SIDEBAR_BG}; color: {theme.TEXT_PRIMARY}; border: 1px solid {theme.BORDER}; border-radius: 10px; padding: 8px;"
-
-    def get_btn_style(self, color):
-        return f"background-color: {color}; color: white; border-radius: 10px; padding: 10px 20px; font-weight: bold;"
+    def add_stat(self, layout, key, value, row, col):
+        container = QFrame()
+        l = QVBoxLayout(container)
+        title = QLabel(self.lang_manager.get_text(key))
+        val = QLabel(value)
+        title.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 11px; font-weight: 600;")
+        val.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 16px; font-weight: bold;")
+        l.addWidget(title)
+        l.addWidget(val)
+        container.setStyleSheet(f"background: {theme.PANEL_BG}; border-radius: 8px; border: 1px solid {theme.BORDER}; padding: 10px;")
+        layout.addWidget(container, row, col)
+        return val # Return label for updates
 
     def load_history(self):
-        history = SavingsService.get_savings_history(self.plan.savings_id)
-        self.history_table.setRowCount(len(history))
-        for i, entry in enumerate(history):
-            self.history_table.setItem(i, 0, QTableWidgetItem(entry["created_at"]))
-            self.history_table.setItem(i, 1, QTableWidgetItem(entry["transaction_type"]))
-            self.history_table.setItem(i, 2, QTableWidgetItem(f"{entry['amount']:,.0f}"))
+        history = SavingsService.get_savings_history(self.account.username, self.account.id)
+        self.table.setRowCount(len(history))
+        for i, tx in enumerate(history):
+            self.table.setItem(i, 0, QTableWidgetItem(str(tx.created_at)[:16]))
+            self.table.setItem(i, 1, QTableWidgetItem(tx.type))
+            item = QTableWidgetItem(safe_currency(tx.amount))
+            item.setForeground(QColor(theme.GREEN if tx.type == 'DEPOSIT' else theme.RED))
+            self.table.setItem(i, 2, item)
 
-    def handle_deposit(self):
-        amount = self.deposit_amount.value()
-        success, msg = SavingsService.deposit(self.username, self.plan.savings_id, amount)
-        if success:
-            QMessageBox.information(self, "Success", msg)
-            self.accept()
-        else:
-            QMessageBox.warning(self, "Error", msg)
-
-    def handle_withdraw(self):
-        # 1. Validation for fixed plans
-        if self.plan.savings_type == SavingsType.FIXED:
-            from datetime import datetime
-            try:
-                end_dt = datetime.strptime(self.plan.end_date, "%Y-%m-%d %H:%M:%S")
-                if datetime.now() < end_dt:
-                    msg = (
-                        f"This fixed savings plan matures on {self.plan.end_date}.\n\n"
-                        "Early withdrawal is NOT permitted for fixed plans in this version.\n"
-                        "Please wait until the maturity date."
-                    )
-                    QMessageBox.warning(self, "Plan Not Matured", msg)
-                    return
-            except Exception as e:
-                print(f"Date parsing error: {e}")
-
-        # 2. Amount Validation
-        amount = self.deposit_amount.value()
-        if amount > self.plan.current_amount:
-            QMessageBox.warning(self, "Insufficient Funds", 
-                                f"You can only withdraw up to {self.plan.current_amount:,.0f} VND.")
-            return
-
-        # 3. Confirmation
-        confirm_msg = f"Are you sure you want to withdraw {amount:,.0f} VND to your wallet?"
-        reply = QMessageBox.question(self, "Confirm Withdrawal", confirm_msg,
-                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    def update_theme(self):
+        styles = get_styles()
+        self.setStyleSheet(f"background-color: {theme.BACKGROUND};")
+        self.title_lbl.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 24px; font-weight: 800;")
+        self.status_badge.setStyleSheet(f"background: {theme.GREEN}; color: white; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 10px;")
+        self.history_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 700;")
         
-        if reply == QMessageBox.StandardButton.No:
-            return
-
-        # 4. Execute
-        success, msg = SavingsService.withdraw(self.username, self.plan.savings_id, amount)
-        if success:
-            QMessageBox.information(self, "Success", msg)
-            self.accept()
-        else:
-            QMessageBox.warning(self, "Withdrawal Failed", msg)
+        self.deposit_btn.setStyleSheet(styles["PRIMARY_BUTTON"])
+        self.withdraw_btn.setStyleSheet(styles["SECONDARY_BUTTON"])
+        
+        table_style = f"""
+            QTableWidget {{
+                background-color: {theme.CARD_BG};
+                color: {theme.TEXT_PRIMARY};
+                border: 1px solid {theme.BORDER};
+                border-radius: 10px;
+                gridline-color: transparent;
+            }}
+            QHeaderView::section {{
+                background-color: {theme.PANEL_BG};
+                color: {theme.TEXT_SECONDARY};
+                padding: 10px;
+                border: none;
+                font-weight: bold;
+            }}
+        """
+        self.table.setStyleSheet(table_style)

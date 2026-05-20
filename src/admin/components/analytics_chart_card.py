@@ -21,8 +21,8 @@ class MiniBarChart(QWidget):
         super().__init__(parent)
         self._data = []   # list of (label, value)
         self._bar_color = "#00D4AA"
-        self.setMinimumHeight(120)
-        self.setMinimumWidth(200)
+        self.setMinimumHeight(160)
+        self.setMinimumWidth(250)
 
     def set_data(self, data, bar_color="#00D4AA"):
         """data: list of (label, value) tuples."""
@@ -42,10 +42,12 @@ class MiniBarChart(QWidget):
 
         w = self.width()
         h = self.height()
-        padding = 8
-        label_h = 16
-        chart_h = h - padding * 2 - label_h
-        chart_w = w - padding * 2
+        padding_top = 25
+        padding_sides = 15
+        padding_bottom = 25
+        
+        chart_h = h - padding_top - padding_bottom
+        chart_w = w - padding_sides * 2
 
         if len(self._data) == 0:
             painter.end()
@@ -56,31 +58,35 @@ class MiniBarChart(QWidget):
             max_val = 1
 
         bar_count = len(self._data)
-        gap = max(2, int(chart_w * 0.05))
-        bar_w = max(6, (chart_w - gap * (bar_count + 1)) // bar_count)
+        gap = max(10, int(chart_w * 0.08))
+        bar_w = (chart_w - gap * (bar_count + 1)) // bar_count
+        bar_w = max(12, min(bar_w, 40)) # Limit bar width for better spacing
+
+        # Re-calculate padding to center bars if they are thin
+        total_bars_w = bar_count * bar_w + (bar_count + 1) * gap
+        if total_bars_w < chart_w:
+            padding_sides += (chart_w - total_bars_w) // 2
 
         # Draw grid lines
         grid_color = QColor(theme.BORDER)
-        grid_color.setAlpha(60)
+        grid_color.setAlpha(40)
         painter.setPen(QPen(grid_color, 1))
         for i in range(4):
-            y = padding + int(chart_h * i / 3)
-            painter.drawLine(padding, y, w - padding, y)
+            y = padding_top + int(chart_h * i / 3)
+            painter.drawLine(padding_sides, y, w - padding_sides, y)
 
         # Draw bars
         bar_color = QColor(self._bar_color)
-        hover_color = QColor(self._bar_color)
-        hover_color.setAlpha(180)
-
+        
         for i, (label, value) in enumerate(self._data):
-            x = padding + gap + i * (bar_w + gap)
+            x = padding_sides + gap + i * (bar_w + gap)
             bar_h = int((value / max_val) * chart_h) if max_val > 0 else 0
-            y = padding + chart_h - bar_h
+            y = padding_top + chart_h - bar_h
 
             # Bar with rounded top
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(bar_color))
-            radius = min(3, bar_w // 2)
+            radius = min(4, bar_w // 3)
             painter.drawRoundedRect(
                 QRectF(x, y, bar_w, bar_h),
                 radius, radius
@@ -91,22 +97,35 @@ class MiniBarChart(QWidget):
             painter.setPen(QPen(text_color))
             font = QFont("Segoe UI", 7)
             painter.setFont(font)
-            # Show last chars of date label
-            short_label = label[-5:] if len(label) > 5 else label
+            
+            # Shorten label: if "2024-05-20", show "20/05"
+            short_label = label
+            if "-" in label and len(label) >= 10:
+                parts = label.split("-")
+                short_label = f"{parts[2]}/{parts[1]}"
+            elif len(label) > 6:
+                short_label = label[-5:]
+                
             painter.drawText(
-                QRectF(x - 2, padding + chart_h + 2, bar_w + 4, label_h),
+                QRectF(x - gap//2, padding_top + chart_h + 4, bar_w + gap, 16),
                 Qt.AlignmentFlag.AlignCenter, short_label
             )
 
             # Value on top of bar
-            if bar_h > 14:
-                painter.setPen(QPen(QColor("#FFFFFF" if is_dark else "#1A1A2E")))
+            if value > 0:
+                painter.setPen(QPen(QColor(theme.TEXT_PRIMARY)))
                 font.setPointSize(7)
                 font.setBold(True)
                 painter.setFont(font)
+                
+                # Format large values
+                val_str = str(value)
+                if value >= 1000000: val_str = f"{value/1000000:.1f}M"
+                elif value >= 1000: val_str = f"{value/1000:.1f}k"
+                
                 painter.drawText(
-                    QRectF(x, y - 14, bar_w, 14),
-                    Qt.AlignmentFlag.AlignCenter, str(value)
+                    QRectF(x - gap//2, y - 18, bar_w + gap, 14),
+                    Qt.AlignmentFlag.AlignCenter, val_str
                 )
 
         painter.end()
@@ -118,8 +137,8 @@ class MiniDonutChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._data = []   # list of (label, value, color)
-        self.setMinimumHeight(130)
-        self.setMinimumWidth(130)
+        self.setMinimumHeight(160)
+        self.setMinimumWidth(250)
 
     def set_data(self, data):
         """data: list of (label, value, color_hex) tuples."""
@@ -137,76 +156,72 @@ class MiniDonutChart(QWidget):
 
         w = self.width()
         h = self.height()
-        size = min(w, h) - 16
-        if size < 40:
-            painter.end()
-            return
-
-        cx = w // 2
+        
+        # Donut position (Left side)
+        chart_size = min(h - 40, w // 2)
+        cx = padding_left = 20 + chart_size // 2
         cy = h // 2
-        outer_r = size // 2
-        inner_r = int(outer_r * 0.55)
+        outer_r = chart_size // 2
+        inner_r = int(outer_r * 0.6)
 
         total = sum(v for _, v, _ in self._data)
-        if total == 0:
-            # Draw empty ring
+        
+        # Draw Arcs
+        if total > 0:
+            start_angle = 90 * 16
+            for label, value, color_hex in self._data:
+                if value <= 0: continue
+                span = int((value / total) * 360 * 16)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(QColor(color_hex)))
+                rect = QRectF(cx - outer_r, cy - outer_r, chart_size, chart_size)
+                painter.drawPie(rect, start_angle, span)
+                start_angle += span
+        else:
             painter.setPen(QPen(QColor(theme.BORDER), 2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(QRectF(cx - outer_r, cy - outer_r, size, size))
-            painter.end()
-            return
+            painter.drawEllipse(QRectF(cx - outer_r, cy - outer_r, chart_size, chart_size))
 
-        # Draw arcs
-        start_angle = 90 * 16  # Start from top
-        for label, value, color_hex in self._data:
-            if value <= 0:
-                continue
-            span = int((value / total) * 360 * 16)
-
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(color_hex)))
-
-            rect = QRectF(cx - outer_r, cy - outer_r, size, size)
-            painter.drawPie(rect, start_angle, span)
-            start_angle += span
-
-        # Cut out center for donut effect
-        bg_color = QColor(theme.CARD_BG)
-        painter.setBrush(QBrush(bg_color))
+        # Cutout for Donut
+        painter.setBrush(QBrush(QColor(theme.CARD_BG)))
         painter.setPen(Qt.PenStyle.NoPen)
         inner_size = inner_r * 2
         painter.drawEllipse(QRectF(cx - inner_r, cy - inner_r, inner_size, inner_size))
 
-        # Center text — total
+        # Center Total text
         painter.setPen(QPen(QColor(theme.TEXT_PRIMARY)))
-        font = QFont("Segoe UI", 11, QFont.Weight.Bold)
+        font = QFont("Segoe UI", 10, QFont.Weight.Bold)
         painter.setFont(font)
         painter.drawText(
             QRectF(cx - inner_r, cy - 10, inner_size, 20),
             Qt.AlignmentFlag.AlignCenter, str(total)
         )
 
-        # Legend below
-        painter.setPen(QPen(QColor(theme.TEXT_SECONDARY)))
-        font = QFont("Segoe UI", 7)
+        # Legend (Right side)
+        legend_x = cx + outer_r + 20
+        legend_y = cy - (len([d for d in self._data if d[1] > 0]) * 20) // 2
+        
+        font = QFont("Segoe UI", 8)
         painter.setFont(font)
-        legend_y = cy + outer_r + 4
-        legend_x = 4
+        
         for label, value, color_hex in self._data:
-            if value <= 0:
-                continue
+            if value < 0: continue # Allow 0 for legend display if needed, but here we skip negative
+            
             # Color dot
             painter.setBrush(QBrush(QColor(color_hex)))
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QRectF(legend_x, legend_y, 6, 6))
-            # Label
-            painter.setPen(QPen(QColor(theme.TEXT_SECONDARY)))
-            text = f"{label}: {value}"
+            painter.drawEllipse(QRectF(legend_x, legend_y + 4, 8, 8))
+            
+            # Label & Value
+            painter.setPen(QPen(QColor(theme.TEXT_PRIMARY)))
+            perc = (value / total * 100) if total > 0 else 0
+            text = f"{label}: {value} ({perc:.0f}%)"
+            
             painter.drawText(
-                QRectF(legend_x + 9, legend_y - 2, 80, 12),
-                Qt.AlignmentFlag.AlignLeft, text
+                QRectF(legend_x + 15, legend_y, w - legend_x - 20, 16),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text
             )
-            legend_x += max(60, len(text) * 6 + 14)
+            legend_y += 22
 
         painter.end()
 

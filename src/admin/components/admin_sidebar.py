@@ -62,6 +62,9 @@ class AdminSidebarButton(QPushButton):
         self.update_style()
 
 
+from pathlib import Path
+from PyQt6.QtGui import QPixmap
+
 class AdminSidebar(QFrame):
     """Enterprise-style sidebar for admin panel navigation.
     
@@ -103,9 +106,25 @@ class AdminSidebar(QFrame):
         brand_container = QHBoxLayout()
         brand_container.setSpacing(10)
 
-        self.brand_logo = QFrame()
+        self.brand_logo = QLabel()
         self.brand_logo.setObjectName("AdminBrandLogo")
         self.brand_logo.setFixedSize(28, 28)
+        
+        # Safe image loading - Assets are inside src/assets
+        # __file__ is src/admin/components/admin_sidebar.py, so .parent.parent is src
+        base_dir = Path(__file__).parent.parent.parent
+        logo_path = base_dir / "assets" / "images" / "Login.png"
+        
+        pixmap = QPixmap(str(logo_path))
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(
+                28, 28, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.brand_logo.setPixmap(scaled_pixmap)
+        else:
+            self.brand_logo.setStyleSheet(f"background-color: {theme.CYAN}; border-radius: 6px;")
 
         self.brand_label = QLabel("DK Admin")
         self.brand_label.setObjectName("AdminBrandLabel")

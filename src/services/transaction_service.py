@@ -15,8 +15,8 @@ from src.services.wallet_service import WalletService
 from src.services.transfer_validator import TransferValidator
 from src.services.notification_service import NotificationService
 from src.services.tier_service import TierService
+from src.core.debug_logger import DebugLogger
 from src.core.exception_handler import GlobalExceptionHandler
-
 
 class TransactionService:
     """Thực hiện, ghi nhật ký và quản lý các giao dịch ngân hàng."""
@@ -74,7 +74,7 @@ class TransactionService:
             cursor = conn.cursor()
             
             if TransactionService.DEBUG_MODE:
-                print(f"[DEBUG] Starting transfer: {amount} VND from {sender_username} to {receiver_account}")
+                DebugLogger.log_error(f"Starting transfer: {amount} VND from {sender_username} to {receiver_account}", context="TRANSFER")
 
             # ─── BẮT ĐẦU GIAO DỊCH ───
             cursor.execute("BEGIN TRANSACTION")
@@ -91,9 +91,6 @@ class TransactionService:
             sender_balance = float(sender_row["balance"])
             sender_status = sender_row["account_status"] or "ACTIVE"
 
-            if TransactionService.DEBUG_MODE:
-                print(f"[DEBUG] Sender validated. Current balance: {sender_balance}")
-
             # 3. Xác thực Cuối cùng
             valid, msg = TransferValidator.validate_transfer(
                 sender_username=sender_username,
@@ -105,17 +102,12 @@ class TransactionService:
             if not valid:
                 raise Exception(msg)
 
-            if TransactionService.DEBUG_MODE:
-                print("[DEBUG] Transfer validation passed.")
-
             # 4. Ghi nợ Người gửi
             new_sender_balance = sender_balance - amount
             cursor.execute(
                 "UPDATE users SET balance = ? WHERE username = ?",
                 (new_sender_balance, sender_username),
             )
-            if TransactionService.DEBUG_MODE:
-                print(f"[DEBUG] Sender debited. New balance: {new_sender_balance}")
 
             # 5. Ghi có Người nhận (Nội bộ)
             if is_internal and receiver_username:
@@ -132,8 +124,6 @@ class TransactionService:
                     "UPDATE users SET balance = ? WHERE username = ?",
                     (new_receiver_balance, receiver_username),
                 )
-                if TransactionService.DEBUG_MODE:
-                    print(f"[DEBUG] Receiver credited. New balance: {new_receiver_balance}")
 
             # 6. Ghi nhật ký Giao dịch
             txn.status = TransactionStatus.SUCCESS
@@ -141,19 +131,6 @@ class TransactionService:
 
             # ─── CAM KẾT (COMMIT) ───
             conn.commit()
-            if TransactionService.DEBUG_MODE:
-                print("[DEBUG] Database transaction committed successfully.")
-            
-            # 7. Xác minh Sau khi Cam kết
-            cursor.execute("SELECT balance FROM users WHERE username = ?", (sender_username,))
-            verify_sender = cursor.fetchone()
-            if is_internal and receiver_username:
-                cursor.execute("SELECT balance FROM users WHERE username = ?", (receiver_username,))
-                verify_receiver = cursor.fetchone()
-                
-                print(f"[DEBUG] Transfer Successful: {amount} VND")
-                print(f"[DEBUG] Sender: {sender_username} | New Balance: {verify_sender['balance']}")
-                print(f"[DEBUG] Receiver: {receiver_username} | New Balance: {verify_receiver['balance']}")
             
             # 8. Tác dụng phụ sau cam kết (Thông báo)
             try:
@@ -174,18 +151,20 @@ class TransactionService:
                     )
                     TierService.update_user_tier(receiver_username, new_receiver_balance)
             except Exception as ne:
-                print(f"[TransactionService] Side effects error: {ne}")
+                DebugLogger.log_error(f"Side effects error: {ne}", context="TRANSFER_SIDE_EFFECTS")
 
             return True, "Transfer completed successfully.", txn
 
         except Exception as e:
             # ─── KHÔI PHỤC (ROLLBACK) ───
             try:
-                conn.rollback()
+                if conn: conn.rollback()
             except Exception:
                 pass
 
             txn.status = TransactionStatus.FAILED
+            DebugLogger.log_sqlite_error(e, context="TRANSFER_EXECUTE")
+            
             # Tùy chọn: Ghi nhật ký cả lỗi thất bại
             try:
                 TransactionService.save_transaction_log(txn)
@@ -195,7 +174,7 @@ class TransactionService:
             return False, f"Transfer failed: {str(e)}", None
         finally:
             try:
-                conn.close()
+                if conn: conn.close()
             except Exception:
                 pass
             WalletService.unlock_wallet(sender_username)
@@ -257,8 +236,10 @@ class TransactionService:
         if not conn:
             return False
         try:
-            from src.models.transaction_model import Transaction
+            import uuid
+            # Use Transaction model
             txn = Transaction(
+                transaction_id=str(uuid.uuid4())[:18].upper(),
                 sender_username=username,
                 receiver_bank="Đăng Khoa Bank",
                 receiver_account=f"SAVINGS-{savings_id}",
@@ -281,9 +262,14 @@ class TransactionService:
             if not conn: return False
         try:
             cursor = conn.cursor()
+            # Lookup username for the savings_id
+            cursor.execute("SELECT username FROM savings_accounts WHERE id = ?", (savings_id,))
+            user_row = cursor.fetchone()
+            username = user_row[0] if user_row else "unknown"
+
             cursor.execute(
-                "INSERT INTO savings_transactions (savings_id, amount, transaction_type) VALUES (?, ?, ?)",
-                (savings_id, amount, txn_type)
+                "INSERT INTO savings_transactions (savings_id, username, type, amount) VALUES (?, ?, ?, ?)",
+                (savings_id, username, txn_type, amount)
             )
             if own_conn: conn.commit()
             return True

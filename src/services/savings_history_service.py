@@ -1,52 +1,38 @@
-"""
-Savings History Service — Đăng Khoa Bank
-Handles retrieval and formatting of savings-related transactions for both user and admin views.
-"""
-
 from src.database.database import get_db_connection
+from src.models.savings_model import SavingsTransaction
 
 class SavingsHistoryService:
     @staticmethod
-    def get_user_savings_history(username: str, limit: int = 50) -> list:
-        """Retrieves all savings transactions for a specific user across all plans."""
+    def get_combined_history(username):
+        """Returns all savings-related activities for a user."""
         conn = get_db_connection()
-        if not conn:
-            return []
+        if not conn: return []
         try:
             cursor = conn.cursor()
+            # Fetch from savings_transactions
             cursor.execute("""
-                SELECT st.*, sa.plan_name, sa.savings_type 
+                SELECT st.*, sa.plan_name 
                 FROM savings_transactions st
-                JOIN savings_accounts sa ON st.savings_id = sa.savings_id
-                WHERE sa.username = ?
+                JOIN savings_accounts sa ON st.savings_id = sa.id
+                WHERE st.username = ?
                 ORDER BY st.created_at DESC
-                LIMIT ?
-            """, (username, limit))
-            return [dict(row) for row in cursor.fetchall()]
+            """, (username,))
+            rows = cursor.fetchall()
+            return rows
         except Exception as e:
-            print(f"SavingsHistoryService.get_user_savings_history error: {e}")
+            print(f"Combined history error: {e}")
             return []
         finally:
             conn.close()
 
     @staticmethod
-    def get_all_savings_history(limit: int = 100) -> list:
-        """Retrieves all savings transactions for admin monitoring."""
-        conn = get_db_connection()
-        if not conn:
-            return []
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT st.*, sa.username, sa.plan_name, sa.savings_type 
-                FROM savings_transactions st
-                JOIN savings_accounts sa ON st.savings_id = sa.savings_id
-                ORDER BY st.created_at DESC
-                LIMIT ?
-            """, (limit,))
-            return [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"SavingsHistoryService.get_all_savings_history error: {e}")
-            return []
-        finally:
-            conn.close()
+    def log_savings_action(username, savings_id, amount, action_type):
+        """Internal helper to log to both savings and main transaction tables."""
+        from src.services.transaction_service import TransactionService
+        from src.models.transaction_model import Transaction, TransactionStatus, TransactionType
+        
+        # 1. Log to savings_transactions table
+        TransactionService.create_savings_history(savings_id, amount, action_type)
+        
+        # 2. Log to main transactions table for general history
+        TransactionService.create_savings_transaction(username, savings_id, amount, action_type)

@@ -1,194 +1,210 @@
+from PyQt6 import sip
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, 
-    QPushButton, QFrame, QGridLayout
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QPushButton, QGridLayout
 )
-from PyQt6.QtCore import Qt, QTimer
-from src.core import theme
+from PyQt6.QtCore import Qt, pyqtSignal
+import src.core.theme as theme
+from src.core.styles import *
 from src.core.language_manager import LanguageManager
+from src.core.theme_manager import ThemeManager
+from src.core.utils import safe_currency
 from src.services.savings_service import SavingsService
-from src.services.savings_analytics_service import SavingsAnalyticsService
+from src.services.savings_growth_service import SavingsGrowthService
 from src.ui.components.savings_card import SavingsCard
-from src.ui.components.savings_chart import SavingsBarChart
+from src.ui.components.savings_chart import SavingsChart
 from src.ui.dialogs.create_savings_dialog import CreateSavingsDialog
 from src.ui.dialogs.savings_detail_dialog import SavingsDetailDialog
+from src.core.app_stabilizer import AppStabilizer
+from src.core.debug_logger import DebugLogger
 
 class SavingsTab(QWidget):
-    def __init__(self, username: str):
+    balance_updated = pyqtSignal()
+
+    def __init__(self, user_data):
         super().__init__()
-        self.username = username
+        self.user_data = user_data
         self.lang_manager = LanguageManager()
+        self.theme_manager = ThemeManager()
+        self.plan_cards = {} # Store cards for live updates
+        self.stat_labels = {} 
         self.setup_ui()
+        self.update_theme()
+        self.load_data()
+        print("Savings widget loaded")
         
-        # Auto-refresh timer for analytics
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self.refresh_analytics)
-        self.refresh_timer.start(10000) # Every 10 seconds
-        
-        self.refresh_data()
+        # Setup Auto-Refresh Timer (10 seconds)
+        self.refresh_timer = AppStabilizer().create_safe_timer(
+            parent=self, interval_ms=10000, callback=self.live_refresh
+        )
+        self.refresh_timer.start()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(25)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
 
-        # Header
-        header = QHBoxLayout()
-        title_container = QVBoxLayout()
-        self.title_label = QLabel(self.lang_manager.get_text("savings"))
-        self.title_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 32px; font-weight: 800;")
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         
-        self.subtitle_label = QLabel("Grow your wealth with smart savings plans")
-        self.subtitle_label.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 14px;")
-        
-        title_container.addWidget(self.title_label)
-        title_container.addWidget(self.subtitle_label)
-        
-        header.addLayout(title_container)
-        header.addStretch()
-        
-        self.create_btn = QPushButton(f"＋ {self.lang_manager.get_text('create_new_plan')}")
-        self.create_btn.clicked.connect(self.show_create_dialog)
-        self.create_btn.setStyleSheet(f"""
-            background-color: {theme.CYAN};
-            color: white;
-            border-radius: 12px;
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: bold;
-        """)
-        header.addWidget(self.create_btn)
-        layout.addLayout(header)
+        self.container = QWidget()
+        self.container_layout = QVBoxLayout(self.container)
+        self.container_layout.setContentsMargins(30, 30, 30, 30)
+        self.container_layout.setSpacing(30)
 
-        # Stats Row
-        stats_layout = QHBoxLayout()
-        self.total_saved_card = self.create_stat_card("total_saved", "0 VND", "💰")
-        self.active_plans_card = self.create_stat_card("active_plans", "0", "📈")
-        self.interest_card = self.create_stat_card("monthly_interest", "0 VND", "✨")
-        
-        stats_layout.addWidget(self.total_saved_card)
-        stats_layout.addWidget(self.active_plans_card)
-        stats_layout.addWidget(self.interest_card)
-        layout.addLayout(stats_layout)
+        # 1. Header & Quick Stats
+        header_layout = QHBoxLayout()
+        self.title_label = QLabel(self.lang_manager.get_text("savings_dashboard"))
+        header_layout.addWidget(self.title_label)
+        header_layout.addStretch()
+        self.create_btn = QPushButton("+ " + self.lang_manager.get_text("new_plan"))
+        # Use single-shot or check for existing connection if needed, 
+        # but here it's called once in setup_ui.
+        self.create_btn.clicked.connect(self.handle_create_plan)
+        header_layout.addWidget(self.create_btn)
+        self.container_layout.addLayout(header_layout)
 
-        # Main Content: Plans + Chart
-        content_layout = QHBoxLayout()
-        
-        # Left: Plans Grid
-        plans_container = QVBoxLayout()
-        plans_container.addWidget(QLabel(self.lang_manager.get_text("active_plans"), styleSheet=f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: bold;"))
-        
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background: transparent; border: none;")
-        
-        self.plans_widget = QWidget()
-        self.plans_grid = QGridLayout(self.plans_widget)
-        self.plans_grid.setSpacing(20)
-        scroll.setWidget(self.plans_widget)
-        
-        plans_container.addWidget(scroll)
-        content_layout.addLayout(plans_container, 2)
-        
-        # Right: Analytics
-        analytics_container = QVBoxLayout()
-        analytics_container.addWidget(QLabel(self.lang_manager.get_text("savings_growth"), styleSheet=f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: bold;"))
-        
+        # Stats Grid
+        self.stats_grid = QGridLayout()
+        self.container_layout.addLayout(self.stats_grid)
+
+        # 2. Analytics Chart
         self.chart_card = QFrame()
-        self.chart_card.setStyleSheet(f"background-color: {theme.PANEL_BG}; border-radius: 20px; border: 1px solid {theme.BORDER};")
         chart_layout = QVBoxLayout(self.chart_card)
-        self.chart = SavingsBarChart()
+        self.chart_title = QLabel(self.lang_manager.get_text("savings_growth"))
+        self.chart = SavingsChart()
+        chart_layout.addWidget(self.chart_title)
         chart_layout.addWidget(self.chart)
-        
-        analytics_container.addWidget(self.chart_card)
-        content_layout.addLayout(analytics_container, 1)
-        
-        layout.addLayout(content_layout)
+        self.container_layout.addWidget(self.chart_card)
 
-    def create_stat_card(self, label_key, value, icon):
-        card = QFrame()
-        card.setStyleSheet(f"background-color: {theme.PANEL_BG}; border-radius: 20px; border: 1px solid {theme.BORDER};")
-        l = QVBoxLayout(card)
-        l.setContentsMargins(20, 20, 20, 20)
+        # 3. Active Plans Section
+        self.plans_title = QLabel(self.lang_manager.get_text("active_plans"))
+        self.container_layout.addWidget(self.plans_title)
         
-        h = QHBoxLayout()
-        h.addWidget(QLabel(icon, styleSheet="font-size: 20px;"))
-        h.addStretch()
-        l.addLayout(h)
+        self.plans_grid = QGridLayout()
+        self.container_layout.addLayout(self.plans_grid)
         
-        val_label = QLabel(value)
-        val_label.setObjectName("value")
-        val_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 22px; font-weight: 800;")
-        l.addWidget(val_label)
-        
-        text_label = QLabel(self.lang_manager.get_text(label_key))
-        text_label.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 12px;")
-        l.addWidget(text_label)
-        
-        return card
+        self.container_layout.addStretch()
+        self.scroll.setWidget(self.container)
+        self.layout.addWidget(self.scroll)
 
-    def refresh_data(self):
-        # Refresh Stats
-        stats = SavingsService.get_savings_stats(self.username)
-        self.total_saved_card.findChild(QLabel, "value").setText(f"{stats['total_saved']:,.0f} VND")
-        self.active_plans_card.findChild(QLabel, "value").setText(str(stats["active_count"]))
-        self.interest_card.findChild(QLabel, "value").setText(f"{stats['total_interest']:,.0f} VND")
-
-        # Refresh Plans
-        # Clear grid
-        for i in reversed(range(self.plans_grid.count())): 
-            widget = self.plans_grid.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
+    def live_refresh(self):
+        """Dynamic refresh — updates numbers and charts without flickering."""
+        if sip.isdeleted(self): return
+        
+        try:
+            # 1. Calculate Growth (Background)
+            SavingsGrowthService.calculate_interest_growth(self.user_data['username'])
             
-        plans = SavingsService.get_user_plans(self.username)
-        for i, plan in enumerate(plans):
-            card = SavingsCard(plan)
-            card.clicked.connect(self.show_detail_dialog)
-            self.plans_grid.addWidget(card, i // 2, i % 2)
+            # 2. Update Stats
+            stats = SavingsService.get_savings_stats(self.user_data['username'])
+            for key, label in self.stat_labels.items():
+                if label and not sip.isdeleted(label) and key in stats:
+                    label.setText(safe_currency(stats[key]) if "interest" in key or "saved" in key else str(stats[key]))
+                
+            # 3. Update Existing Cards
+            plans = SavingsService.get_user_savings(self.user_data['username'])
+            for plan in plans:
+                card = self.plan_cards.get(plan.id)
+                if card and not sip.isdeleted(card):
+                    if hasattr(card, "update_data"):
+                        card.update_data(plan)
+            
+            # 4. Refresh Chart with Real Analytics
+            from src.services.savings_analytics_service import SavingsAnalyticsService
+            growth_data = SavingsAnalyticsService.get_growth_data(self.user_data['username'])
+            if self.chart and not sip.isdeleted(self.chart):
+                self.chart.set_data(growth_data)
+        except Exception as e:
+            DebugLogger.log_error(f"SavingsTab live_refresh crash: {e}", context="UI_REFRESH")
 
-        self.refresh_analytics()
+    def load_data(self):
+        """Full data load — rebuilds the active plans list and chart."""
+        if sip.isdeleted(self): return
 
-    def refresh_analytics(self):
-        """Refreshes chart data without rebuilding the entire UI."""
-        growth_data = SavingsAnalyticsService.get_growth_data(self.username)
-        if growth_data:
-            self.chart.set_data(growth_data)
-        else:
-            # Fallback to monthly deposits if no active growth
-            monthly_data = SavingsAnalyticsService.get_monthly_deposits(self.username)
-            if any(v > 0 for _, v in monthly_data):
-                self.chart.set_data(monthly_data)
-            else:
-                self.chart.set_data([("No Data", 0)])
+        try:
+            # Stats
+            stats = SavingsService.get_savings_stats(self.user_data['username'])
+            self._clear_layout(self.stats_grid)
+            self.stat_labels = {}
+            self.add_stat_card("total_saved", safe_currency(stats['total_saved']), 0, 0)
+            self.add_stat_card("active_plans", str(stats['active_plans']), 0, 1)
+            self.add_stat_card("monthly_interest", safe_currency(stats['monthly_interest']), 0, 2)
+
+            # Chart Data
+            from src.services.savings_analytics_service import SavingsAnalyticsService
+            growth_data = SavingsAnalyticsService.get_growth_data(self.user_data['username'])
+            if self.chart and not sip.isdeleted(self.chart):
+                self.chart.set_data(growth_data)
+
+            # Plans
+            self._clear_layout(self.plans_grid)
+            self.plan_cards = {}
+            plans = SavingsService.get_user_savings(self.user_data['username'])
+            for i, plan in enumerate(plans):
+                card = SavingsCard(plan)
+                card.mousePressEvent = lambda e, p=plan: self.show_plan_detail(p)
+                self.plan_cards[plan.id] = card
+                self.plans_grid.addWidget(card, i // 2, i % 2)
+        except Exception as e:
+            DebugLogger.log_error(f"SavingsTab load_data crash: {e}", context="UI_LOAD")
 
     def update_ui(self):
-        """Standard lifecycle method for tab refresh."""
-        self.refresh_data()
+        """Interface update bridge for DashboardWindow."""
+        self.load_data()
+    def add_stat_card(self, key, value, row, col):
+        card = QFrame()
+        l = QVBoxLayout(card)
+        t = QLabel(self.lang_manager.get_text(key))
+        v = QLabel(value)
+        self.stat_labels[key] = v
+        l.addWidget(t)
+        l.addWidget(v)
+        card.setStyleSheet(f"background: {theme.PANEL_BG}; border: 1px solid {theme.BORDER}; border-radius: 12px; padding: 15px;")
+        t.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 12px; font-weight: 600;")
+        v.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 20px; font-weight: 800;")
+        self.stats_grid.addWidget(card, row, col)
 
-    def update_translations(self):
-        """Standard lifecycle method for language refresh."""
-        self.title_label.setText(self.lang_manager.get_text("savings"))
-        self.create_btn.setText(f"＋ {self.lang_manager.get_text('create_new_plan')}")
-        # Refresh card labels
-        self.refresh_data()
+    def handle_create_plan(self):
+        try:
+            dialog = CreateSavingsDialog(self)
+            if dialog.exec():
+                data = dialog.get_data()
+                success, msg = SavingsService.create_savings_plan(
+                    self.user_data['username'], **data
+                )
+                self.load_data()
+                self.balance_updated.emit()
+        except Exception as e:
+            DebugLogger.log_error(f"handle_create_plan crash: {e}", context="DIALOG")
+
+    def show_plan_detail(self, plan):
+        try:
+            dialog = SavingsDetailDialog(plan, self)
+            dialog.exec()
+            self.load_data()
+            self.balance_updated.emit()
+        except Exception as e:
+            DebugLogger.log_error(f"show_plan_detail crash: {e}", context="DIALOG")
+
+    def _clear_layout(self, layout):
+        if not layout: return
+        while layout.count():
+            child = layout.takeAt(0)
+            if child and child.widget():
+                widget = child.widget()
+                if widget:
+                    widget.deleteLater()
 
     def update_theme(self):
-        """Standard lifecycle method for theme refresh."""
-        # Theme is mostly handled by refresh_data and dynamic styles, 
-        # but we could force update widgets if needed.
-        self.refresh_data()
-
-    def show_create_dialog(self):
-        dialog = CreateSavingsDialog(self.username, self)
-        if dialog.exec():
-            self.refresh_data()
-
-    def show_detail_dialog(self, savings_id):
-        # Find the plan
-        plans = SavingsService.get_user_plans(self.username)
-        plan = next((p for p in plans if p.savings_id == savings_id), None)
-        if plan:
-            dialog = SavingsDetailDialog(self.username, plan, self)
-            if dialog.exec():
-                self.refresh_data()
+        if sip.isdeleted(self): return
+        styles = get_styles()
+        self.setStyleSheet(f"background-color: {theme.BACKGROUND};")
+        self.title_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 28px; font-weight: 800;")
+        self.create_btn.setStyleSheet(styles["PRIMARY_BUTTON"])
+        self.chart_card.setStyleSheet(f"background: {theme.CARD_BG}; border: 1px solid {theme.BORDER}; border-radius: 16px;")
+        self.chart_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 700; padding: 10px;")
+        self.plans_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 20px; font-weight: 800;")
+        
+        if hasattr(self, 'chart') and self.chart and not sip.isdeleted(self.chart):
+            self.chart.update()

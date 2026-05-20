@@ -1,107 +1,92 @@
-"""
-Savings Chart Component — Đăng Khoa Bank
-Lightweight QPainter-based chart for savings analytics.
-"""
+from PyQt6.QtWidgets import QWidget
+from PyQt6.QtCore import Qt, QRectF, QPointF
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QFont, QPainterPath
+import src.core.theme as theme
 
-from PyQt6.QtWidgets import QWidget, QSizePolicy
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QBrush
-from src.core.theme import CYAN, BORDER, TEXT_SECONDARY
-from src.core import theme
+class SavingsChart(QWidget):
+    def __init__(self, data=None):
+        super().__init__()
+        self._data = data or [] 
+        self.setMinimumHeight(180)
 
-class SavingsBarChart(QWidget):
-    """Bar chart for savings growth and deposits."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._data = [] # list of (label, value)
-        self._bar_color = CYAN
-        self.setMinimumHeight(200)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-    def set_data(self, data, color=None):
+    def set_data(self, data):
         self._data = data
-        if color:
-            self._bar_color = color
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        w = self.width()
-        h = self.height()
-        padding_top = 40
+        
+        w, h = self.width(), self.height()
+        padding_left = 60
+        padding_right = 30
+        padding_top = 20
         padding_bottom = 40
-        padding_side = 30
+        
+        chart_w = w - padding_left - padding_right
         chart_h = h - padding_top - padding_bottom
-        chart_w = w - padding_side * 2
-
-        if not self._data or (len(self._data) == 1 and self._data[0][0] == "No Data"):
-            painter.setPen(QPen(QColor(TEXT_SECONDARY)))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No savings data available")
-            painter.end()
-            return
-
-        max_val = max(v for _, v in self._data) if self._data else 1
-        if max_val == 0: max_val = 1
-        max_val *= 1.2 # Headroom
-
-        bar_count = len(self._data)
-        gap = 15
-        bar_w = max(10, (chart_w - gap * (bar_count + 1)) // bar_count)
-
-        # Draw Grid
-        grid_color = QColor(BORDER)
-        grid_color.setAlpha(40)
-        grid_pen = QPen(grid_color, 1, Qt.PenStyle.DashLine)
-        painter.setPen(grid_pen)
-        for i in range(5):
-            y = padding_top + int(chart_h * i / 4)
-            painter.drawLine(padding_side, y, w - padding_side, y)
-            
-            # Grid labels
-            val = max_val * (4-i) / 4
-            painter.setPen(QPen(QColor(TEXT_SECONDARY)))
-            painter.setFont(QFont("Segoe UI", 7))
-            painter.drawText(QRectF(5, y-10, padding_side-10, 20), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{val/1e6:.1f}M")
+        
+        # 1. Background Grid & Y-Axis Labels
+        max_val = max(self._data) if self._data else 0
+        if max_val == 0: max_val = 1000000 # Default range for visual
+        
+        grid_pen = QPen(QColor(theme.BORDER), 1, Qt.PenStyle.DashLine)
+        painter.setFont(QFont("Segoe UI", 8))
+        
+        for i in range(4): # 4 horizontal lines
+            y = padding_top + (i * chart_h / 3)
             painter.setPen(grid_pen)
+            painter.drawLine(int(padding_left), int(y), int(w - padding_right), int(y))
+            
+            # Y-Axis Label
+            painter.setPen(QPen(QColor(theme.TEXT_SECONDARY)))
+            val_y = max_val - (i * max_val / 3)
+            painter.drawText(QRectF(0, y - 10, padding_left - 10, 20), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{int(val_y/1000)}k")
 
-        # Draw Bars
-        for i, (label, value) in enumerate(self._data):
-            x = padding_side + gap + i * (bar_w + gap)
-            bar_h = int((value / max_val) * chart_h)
-            y = padding_top + chart_h - bar_h
-
-            # Bar Gradient
-            grad = QColor(self._bar_color)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(grad))
-            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 6, 6)
-
-            # Value text on hover or always
-            if bar_w > 30:
-                painter.setPen(QPen(QColor(TEXT_SECONDARY)))
-                painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
-                painter.drawText(
-                    QRectF(x - gap//2, y - 20, bar_w + gap, 20),
-                    Qt.AlignmentFlag.AlignCenter, f"{value/1e6:.1f}M"
-                )
-
-            # Label
-            painter.setPen(QPen(QColor(TEXT_SECONDARY)))
-            painter.setFont(QFont("Segoe UI", 8))
-            # Rotate label if too many bars
-            if bar_count > 6:
-                painter.save()
-                painter.translate(x + bar_w/2, padding_top + chart_h + 10)
-                painter.rotate(45)
-                painter.drawText(0, 0, label)
-                painter.restore()
-            else:
-                painter.drawText(
-                    QRectF(x - gap//2, padding_top + chart_h + 5, bar_w + gap, 20),
-                    Qt.AlignmentFlag.AlignCenter, label
-                )
-
+        if not self._data or len(self._data) < 2:
+            painter.setPen(QPen(QColor(theme.TEXT_SECONDARY), 1))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No savings history yet")
+            return
+        
+        points = []
+        for i, val in enumerate(self._data):
+            x = padding_left + (i * chart_w / (len(self._data) - 1))
+            y = padding_top + chart_h - (val * chart_h / max_val)
+            points.append(QPointF(x, y))
+            
+            # X-Axis Labels (Date placeholders)
+            if i % 2 == 0:
+                painter.setPen(QPen(QColor(theme.TEXT_SECONDARY)))
+                painter.drawText(QRectF(x - 20, h - padding_bottom + 5, 40, 20), Qt.AlignmentFlag.AlignCenter, f"D{i+1}")
+            
+        # 2. Draw Area (Gradient)
+        path = QPainterPath()
+        path.moveTo(points[0])
+        for i in range(1, len(points)):
+            path.lineTo(points[i])
+            
+        fill_path = QPainterPath(path)
+        fill_path.lineTo(points[-1].x(), padding_top + chart_h)
+        fill_path.lineTo(points[0].x(), padding_top + chart_h)
+        fill_path.closeSubpath()
+        
+        grad = QLinearGradient(0, padding_top, 0, padding_top + chart_h)
+        c_green = QColor(theme.GREEN)
+        c_green.setAlpha(60)
+        grad.setColorAt(0, c_green)
+        c_green.setAlpha(0)
+        grad.setColorAt(1, c_green)
+        
+        painter.fillPath(fill_path, QBrush(grad))
+        
+        # 3. Draw Main Line
+        painter.setPen(QPen(QColor(theme.GREEN), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawPath(path)
+        
+        # 4. Draw Points
+        painter.setPen(QPen(QColor(theme.BACKGROUND), 2))
+        painter.setBrush(QBrush(QColor(theme.GREEN)))
+        for p in points:
+            painter.drawEllipse(p, 4, 4)
+            
         painter.end()

@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QFrame, QScrollArea, QGridLayout,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QPushButton, QSizePolicy, QComboBox,
-    QLineEdit, QTextEdit, QMessageBox, QFileDialog
+    QLineEdit, QTextEdit, QMessageBox, QFileDialog, QDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from PyQt6.QtGui import QColor, QFont, QDesktopServices

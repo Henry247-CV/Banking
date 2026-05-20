@@ -26,6 +26,7 @@ def _get_wallet_lock(username: str) -> threading.Lock:
         return _wallet_locks[username]
 
 
+from src.core.debug_logger import DebugLogger
 from src.core.exception_handler import GlobalExceptionHandler
 
 class WalletService:
@@ -43,7 +44,7 @@ class WalletService:
             row = cursor.fetchone()
             return float(row["balance"]) if row else 0.0
         except Exception as e:
-            GlobalExceptionHandler.log_error(f"WalletService.get_balance error for {username}:\n{traceback.format_exc()}")
+            DebugLogger.log_sqlite_error(e, query="SELECT balance FROM users WHERE username = ?", params=(username,))
             return 0.0
         finally:
             conn.close()
@@ -75,7 +76,7 @@ class WalletService:
             cursor.execute("SELECT account_status FROM users WHERE username = ?", (username,))
             row = cursor.fetchone()
             if row and row["account_status"] in ("FROZEN", "SUSPENDED"):
-                print(f"[WalletService] Balance update blocked: Account {username} is {row['account_status']}")
+                DebugLogger.log_error(f"Balance update blocked: Account {username} is {row['account_status']}", context="WALLET")
                 return False
 
             cursor.execute(
@@ -87,8 +88,9 @@ class WalletService:
             return True
         except Exception as e:
             if own_conn:
-                conn.rollback()
-            GlobalExceptionHandler.log_error(f"WalletService.update_balance error for {username}:\n{traceback.format_exc()}")
+                try: conn.rollback()
+                except Exception: pass
+            DebugLogger.log_sqlite_error(e, query="UPDATE users SET balance = ? WHERE username = ?", params=(new_balance, username))
             return False
         finally:
             if own_conn:
@@ -108,7 +110,7 @@ class WalletService:
                 return Wallet.from_db_row(dict(row))
             return None
         except Exception as e:
-            GlobalExceptionHandler.log_error(f"WalletService.get_wallet error for {username}:\n{traceback.format_exc()}")
+            DebugLogger.log_sqlite_error(e, query="SELECT * FROM users WHERE username = ?", params=(username,))
             return None
         finally:
             conn.close()
@@ -183,7 +185,7 @@ class WalletService:
                 conn.commit()
             return True
         except Exception as e:
-            print(f"[WalletService] ensure_wallet_exists error: {e}")
+            DebugLogger.log_sqlite_error(e, context="WALLET_INIT")
             return False
         finally:
             conn.close()
@@ -212,7 +214,7 @@ class WalletService:
                 return False
             
             if row["account_status"] in ("FROZEN", "SUSPENDED"):
-                print(f"[WalletService] Credit blocked: Receiver {row['username']} is {row['account_status']}")
+                DebugLogger.log_error(f"Credit blocked: Receiver {row['username']} is {row['account_status']}", context="WALLET")
                 return False
 
             new_balance = float(row["balance"]) + amount
@@ -225,8 +227,9 @@ class WalletService:
             return True
         except Exception as e:
             if own_conn:
-                conn.rollback()
-            print(f"[WalletService] Credit receiver error: {e}")
+                try: conn.rollback()
+                except Exception: pass
+            DebugLogger.log_sqlite_error(e, context="CREDIT_RECEIVER")
             return False
         finally:
             if own_conn:

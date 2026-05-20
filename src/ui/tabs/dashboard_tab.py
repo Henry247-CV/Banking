@@ -7,90 +7,116 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from src.core.theme import *
 from src.core.styles import *
 from src.ui.components.dashboard_cards import OverviewCard, QuickActionButton
 from src.ui.components.transaction_table import TransactionTable
 from src.ui.components.notification_card import NotificationCard
-from src.ui.components.saving_card import SavingCard
+from src.ui.components.savings_card import SavingsCard
 from src.services.transfer_service import TransferService
 from src.services.notification_service import NotificationService
-from src.services.saving_service import SavingService
-
+from src.services.savings_service import SavingsService
 from src.core.language_manager import LanguageManager
 from src.core.theme_manager import ThemeManager
+from src.core.app_stabilizer import AppStabilizer
+
+from PyQt6 import sip
+from src.core.debug_logger import DebugLogger
 
 class DashboardTab(QWidget):
+    nav_requested = pyqtSignal(int)
+
     def __init__(self, user_data):
         super().__init__()
         self.user_data = user_data
         self.transfer_service = TransferService()
         self.notification_service = NotificationService()
-        self.saving_service = SavingService()
+        self.savings_service = SavingsService()
         self.lang_manager = LanguageManager()
         self.theme_manager = ThemeManager()
         self.setup_ui()
         self.update_theme()
         self.update_translations()
+        
+        # Auto-Refresh Timer for live savings sync (10 seconds)
+        self.refresh_timer = AppStabilizer().create_safe_timer(
+            parent=self, interval_ms=10000, callback=self.refresh_all
+        )
+        if self.refresh_timer:
+            self.refresh_timer.start()
 
     def update_theme(self):
-        styles = get_styles()
-        self.scroll.verticalScrollBar().setStyleSheet(styles["GLOBAL_STYLE"])
-        self.welcome_card.setStyleSheet(f"""
-            QFrame {{
-                background-color: qlineargradient(
-                    x1: 0, y1: 0, x2: 1, y2: 1,
-                    stop: 0 {theme.PANEL_BG}, stop: 1 {theme.BACKGROUND}
-                );
-                border-radius: 24px;
-                border: 1px solid {theme.BORDER};
-            }}
-        """)
-        self.welcome_lbl.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 16px; font-weight: 500; border: none; background: transparent;")
-        self.user_name_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 32px; font-weight: 800; border: none; background: transparent;")
-        self.welcome_sub.setStyleSheet(f"color: {theme.CYAN}; font-size: 14px; font-weight: 500; border: none; background: transparent;")
-        
-        self.trans_container.setStyleSheet(styles["CARD_STYLE"])
-        self.trans_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
-        self.trans_table.update_theme()
+        if sip.isdeleted(self): return
+        try:
+            styles = get_styles()
+            self.scroll.verticalScrollBar().setStyleSheet(styles["GLOBAL_STYLE"])
+            self.welcome_card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: qlineargradient(
+                        x1: 0, y1: 0, x2: 1, y2: 1,
+                        stop: 0 {theme.PANEL_BG}, stop: 1 {theme.BACKGROUND}
+                    );
+                    border-radius: 24px;
+                    border: 1px solid {theme.BORDER};
+                }}
+            """)
+            self.welcome_lbl.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 16px; font-weight: 500; border: none; background: transparent;")
+            self.user_name_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 32px; font-weight: 800; border: none; background: transparent;")
+            self.welcome_sub.setStyleSheet(f"color: {theme.CYAN}; font-size: 14px; font-weight: 500; border: none; background: transparent;")
+            
+            self.trans_container.setStyleSheet(styles["CARD_STYLE"])
+            self.trans_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
+            self.trans_table.update_theme()
 
-        self.notify_container.setStyleSheet(styles["CARD_STYLE"])
-        self.notify_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
-        
-        self.savings_container.setStyleSheet(styles["CARD_STYLE"])
-        self.savings_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
-        
-        self.actions_container.setStyleSheet(styles["CARD_STYLE"])
-        self.actions_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
-        
-        # Refresh child items theme
-        for i in range(self.notify_preview_layout.count()):
-            w = self.notify_preview_layout.itemAt(i).widget()
-            if hasattr(w, "update_theme"): w.update_theme()
+            self.notify_container.setStyleSheet(styles["CARD_STYLE"])
+            self.notify_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
+            
+            self.savings_container.setStyleSheet(styles["CARD_STYLE"])
+            self.savings_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
+            
+            self.actions_container.setStyleSheet(styles["CARD_STYLE"])
+            self.actions_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
+            
+            # Refresh child items theme
+            for i in range(self.notify_preview_layout.count()):
+                item = self.notify_preview_layout.itemAt(i)
+                if item and item.widget():
+                    w = item.widget()
+                    if hasattr(w, "update_theme"): w.update_theme()
 
-        for i in range(self.savings_preview_layout.count()):
-            w = self.savings_preview_layout.itemAt(i).widget()
-            if hasattr(w, "update_theme"): w.update_theme()
+            for i in range(self.savings_preview_layout.count()):
+                item = self.savings_preview_layout.itemAt(i)
+                if item and item.widget():
+                    w = item.widget()
+                    if hasattr(w, "update_theme"): w.update_theme()
 
-        self.refresh_balance_cards()
+            self.refresh_balance_cards()
+        except Exception as e:
+            DebugLogger.log_error(f"DashboardTab update_theme crash: {e}", context="THEME")
 
     def update_translations(self):
-        self.welcome_lbl.setText(self.lang_manager.get_text("welcome_back"))
-        self.welcome_sub.setText(self.lang_manager.get_text("manage_finances"))
-        self.trans_title.setText(self.lang_manager.get_text("recent_transactions"))
-        self.notify_title.setText(self.lang_manager.get_text("notifications"))
-        self.savings_title.setText(self.lang_manager.get_text("savings_progress"))
-        self.actions_title.setText(self.lang_manager.get_text("quick_actions"))
-        
-        # Actions need translation too
-        for i in range(self.actions_list_layout.count()):
-            widget = self.actions_list_layout.itemAt(i).widget()
-            if isinstance(widget, QuickActionButton):
-                widget.update_translation()
-        
-        self.refresh_balance_cards()
+        if sip.isdeleted(self): return
+        try:
+            self.welcome_lbl.setText(self.lang_manager.get_text("welcome_back"))
+            self.welcome_sub.setText(self.lang_manager.get_text("manage_finances"))
+            self.trans_title.setText(self.lang_manager.get_text("recent_transactions"))
+            self.notify_title.setText(self.lang_manager.get_text("notifications"))
+            self.savings_title.setText(self.lang_manager.get_text("savings_progress"))
+            self.actions_title.setText(self.lang_manager.get_text("quick_actions"))
+            
+            # Actions need translation too
+            for i in range(self.actions_list_layout.count()):
+                item = self.actions_list_layout.itemAt(i)
+                if item and item.widget():
+                    widget = item.widget()
+                    if isinstance(widget, QuickActionButton):
+                        widget.update_translation()
+            
+            self.refresh_balance_cards()
+        except Exception as e:
+            DebugLogger.log_error(f"DashboardTab update_translations crash: {e}", context="TRANSLATION")
 
     def setup_ui(self):
         self.main_layout = QVBoxLayout(self)
@@ -134,15 +160,22 @@ class DashboardTab(QWidget):
         middle_layout.setSpacing(30)
 
         self.trans_container = QFrame()
+        self.trans_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.trans_container.mousePressEvent = lambda e: self.nav_requested.emit(2) # Wallet
         trans_layout = QVBoxLayout(self.trans_container)
         trans_layout.setContentsMargins(25, 25, 25, 25)
         self.trans_title = QLabel("Recent Transactions")
         trans_layout.addWidget(self.trans_title)
         self.trans_table = TransactionTable(rows=5, cols=5)
+        # Prevent table clicks from being swallowed if possible, but TransactionTable might have its own logic.
+        # Usually, the table is read-only in preview.
+        self.trans_table.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         trans_layout.addWidget(self.trans_table)
         middle_layout.addWidget(self.trans_container, 65)
 
         self.notify_container = QFrame()
+        self.notify_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.notify_container.mousePressEvent = lambda e: self.nav_requested.emit(5) # Notifications
         notify_layout = QVBoxLayout(self.notify_container)
         notify_layout.setContentsMargins(25, 25, 25, 25)
         self.notify_title = QLabel("Notifications")
@@ -157,6 +190,8 @@ class DashboardTab(QWidget):
         bottom_layout.setSpacing(30)
 
         self.savings_container = QFrame()
+        self.savings_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.savings_container.mousePressEvent = lambda e: self.nav_requested.emit(4) # Savings
         savings_layout = QVBoxLayout(self.savings_container)
         savings_layout.setContentsMargins(25, 25, 25, 25)
         self.savings_title = QLabel("Savings Progress")
@@ -173,14 +208,15 @@ class DashboardTab(QWidget):
         self.actions_list_layout = QVBoxLayout()
         actions_layout.addLayout(self.actions_list_layout)
         
-        actions = [
-            ("transfer_money", "💸"),
-            ("add_wallet", "💳"),
-            ("view_bills", "📄"),
-            ("create_savings", "🎯")
+        actions_list = [
+            ("transfer_money", "💸", 3),
+            ("add_wallet", "💳", 2),
+            ("view_bills", "📄", 0), # Default to dashboard
+            ("create_savings", "🎯", 4)
         ]
-        for key, icon in actions:
+        for key, icon, idx in actions_list:
             btn = QuickActionButton(key, icon)
+            btn.clicked.connect(lambda checked, i=idx: self.nav_requested.emit(i))
             self.actions_list_layout.addWidget(btn)
         
         bottom_layout.addWidget(self.actions_container, 35)
@@ -199,9 +235,19 @@ class DashboardTab(QWidget):
         
         formatted_balance = "{:,.0f} VND".format(self.user_data['balance'])
         balance_card = OverviewCard(self.lang_manager.get_text("total_balance"), formatted_balance, icon="💰")
+        balance_card.clicked.connect(lambda: self.nav_requested.emit(2)) # Wallet
+
         tier_card = TierOverviewCard(self.user_data.get('customer_tier', 'STANDARD'))
+        tier_card.clicked.connect(lambda: self.nav_requested.emit(1)) # Account
+
         expense_card = OverviewCard(self.lang_manager.get_text("monthly_expense"), "4,200,000 VND", color=theme.RED, icon="📈")
-        savings_card = OverviewCard(self.lang_manager.get_text("total_savings"), "45,000,000 VND", color=theme.ORANGE, icon="🎯")
+        expense_card.clicked.connect(lambda: self.nav_requested.emit(2)) # Wallet
+
+        # Real savings data
+        stats = self.savings_service.get_savings_stats(self.user_data['username'])
+        formatted_savings = "{:,.0f} VND".format(stats['total_saved'])
+        savings_card = OverviewCard(self.lang_manager.get_text("total_savings"), formatted_savings, color=theme.ORANGE, icon="🎯")
+        savings_card.clicked.connect(lambda: self.nav_requested.emit(4)) # Savings
 
         self.cards_layout.addWidget(balance_card)
         self.cards_layout.addWidget(tier_card)
@@ -222,7 +268,7 @@ class DashboardTab(QWidget):
         
         notifications = self.notification_service.get_user_notifications(self.user_data['username'])
         if not notifications:
-            lbl = QLabel("No recent alerts.")
+            lbl = QLabel(self.lang_manager.get_text("no_alerts"))
             lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px; font-weight: 500;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.notify_preview_layout.addWidget(lbl)
@@ -231,6 +277,7 @@ class DashboardTab(QWidget):
         for n in notifications[:3]:
             card = NotificationCard(n[1], n[2], n[5], is_read=(n[4] == 1))
             card.setFixedHeight(85) 
+            card.clicked.connect(lambda: self.nav_requested.emit(5)) # Notifications
             self.notify_preview_layout.addWidget(card)
 
     def refresh_savings(self):
@@ -238,16 +285,17 @@ class DashboardTab(QWidget):
             item = self.savings_preview_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
 
-        savings = self.saving_service.get_user_savings(self.user_data['username'])
+        savings = self.savings_service.get_user_savings(self.user_data['username'])
         if not savings:
-            lbl = QLabel("No active saving goals.")
+            lbl = QLabel(self.lang_manager.get_text("no_savings"))
             lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px; font-weight: 500;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.savings_preview_layout.addWidget(lbl)
             return
 
         for s in savings[:2]:
-            card = SavingCard(s[1], s[2], s[3])
+            card = SavingsCard(s)
+            card.clicked.connect(lambda: self.nav_requested.emit(4)) # Savings
             self.savings_preview_layout.addWidget(card)
 
     def refresh_all(self):

@@ -40,6 +40,9 @@ from src.admin.components.announcement_card import AnnouncementCard
 from src.core.utils import safe_currency
 
 
+from PyQt6 import sip
+from src.core.debug_logger import DebugLogger
+
 class AdminDashboardTab(QWidget):
     """Admin analytics dashboard with stat cards, charts, monitoring, and activity feed."""
 
@@ -101,10 +104,23 @@ class AdminDashboardTab(QWidget):
         )
         self.card_flagged.setObjectName("StatCard_Flagged")
 
+        self.card_total_savings = AdminStatCard(
+            title="Total Savings",
+            value="0 VND", trend_text="Real-time volume", icon="🏦",
+            accent_color=theme.ORANGE,
+        )
+        self.card_active_savings = AdminStatCard(
+            title="Active Savings",
+            value="0", trend_text="Current plans", icon="📈",
+            accent_color=theme.CYAN,
+        )
+
         cards_grid.addWidget(self.card_total_users, 0, 0)
         cards_grid.addWidget(self.card_total_balance, 0, 1)
         cards_grid.addWidget(self.card_monthly_volume, 0, 2)
         cards_grid.addWidget(self.card_flagged, 0, 3)
+        cards_grid.addWidget(self.card_total_savings, 1, 0)
+        cards_grid.addWidget(self.card_active_savings, 1, 1)
         self.main_layout.addLayout(cards_grid)
 
         # ── Section 2: Analytics Charts (2x2 grid) ──
@@ -189,7 +205,9 @@ class AdminDashboardTab(QWidget):
         outer_layout.addWidget(scroll)
 
     def load_dashboard_data(self):
-        """Load all analytics data from database."""
+        """Load all analytics data from database including savings."""
+        if sip.isdeleted(self): return
+        
         try:
             # Stat cards
             total_users = AnalyticsService.get_total_users()
@@ -198,6 +216,14 @@ class AdminDashboardTab(QWidget):
 
             total_balance = AnalyticsService.get_total_balance()
             self.card_total_balance.set_value(safe_currency(total_balance))
+
+            # Savings Volume
+            savings_vol = AnalyticsService.get_total_savings_volume()
+            self.card_total_savings.set_value(safe_currency(savings_vol))
+            
+            # Active Plans
+            active_savings = AnalyticsService.get_active_savings_count()
+            self.card_active_savings.set_value(str(active_savings))
 
             monthly_volume = AnalyticsService.get_transaction_volume(30)
             self.card_monthly_volume.set_value(f"{monthly_volume:,}")
@@ -210,65 +236,77 @@ class AdminDashboardTab(QWidget):
 
             # Charts
             daily_txns = AnalyticsService.get_daily_transaction_counts(7)
-            self.txn_bar_chart.set_data(daily_txns, bar_color=theme.CYAN)
+            if not sip.isdeleted(self.txn_bar_chart):
+                self.txn_bar_chart.set_data(daily_txns, bar_color=theme.CYAN)
 
             user_growth = AnalyticsService.get_daily_user_registrations(7)
-            self.user_bar_chart.set_data(user_growth, bar_color="#22C55E")
+            if not sip.isdeleted(self.user_bar_chart):
+                self.user_bar_chart.set_data(user_growth, bar_color="#22C55E")
 
             tier_dist = AnalyticsService.get_tier_distribution()
-            self.tier_donut.set_data([
-                ("Standard", tier_dist.get("STANDARD", 0), theme.TEXT_SECONDARY),
-                ("Gold", tier_dist.get("GOLD", 0), "#D4AF37"),
-                ("Diamond", tier_dist.get("DIAMOND", 0), theme.CYAN),
-            ])
+            if not sip.isdeleted(self.tier_donut):
+                self.tier_donut.set_data([
+                    ("Standard", tier_dist.get("STANDARD", 0), theme.TEXT_SECONDARY),
+                    ("Gold", tier_dist.get("GOLD", 0), "#D4AF37"),
+                    ("Diamond", tier_dist.get("DIAMOND", 0), theme.CYAN),
+                ])
 
             risk_dist = AnalyticsService.get_risk_distribution()
-            self.risk_donut.set_data([
-                ("Low", risk_dist.get("LOW", 0), "#4ADE80"),
-                ("Medium", risk_dist.get("MEDIUM", 0), "#FBBF24"),
-                ("High", risk_dist.get("HIGH", 0), "#FB923C"),
-                ("Critical", risk_dist.get("CRITICAL", 0), "#F87171"),
-            ])
+            if not sip.isdeleted(self.risk_donut):
+                self.risk_donut.set_data([
+                    ("Low", risk_dist.get("LOW", 0), "#4ADE80"),
+                    ("Medium", risk_dist.get("MEDIUM", 0), "#FBBF24"),
+                    ("High", risk_dist.get("HIGH", 0), "#FB923C"),
+                    ("Critical", risk_dist.get("CRITICAL", 0), "#F87171"),
+                ])
 
             # Risk monitoring
-            self.risk_card.set_data(
-                flagged=risk_stats.get("flagged", 0),
-                critical=risk_stats.get("critical", 0),
-                blocked=risk_stats.get("blocked", 0),
-                suspicious_users=risk_stats.get("suspicious_users", 0),
-            )
+            if not sip.isdeleted(self.risk_card):
+                self.risk_card.set_data(
+                    flagged=risk_stats.get("flagged", 0),
+                    critical=risk_stats.get("critical", 0),
+                    blocked=risk_stats.get("blocked", 0),
+                    suspicious_users=risk_stats.get("suspicious_users", 0),
+                )
 
             # System health
             health = AnalyticsService.get_system_health()
-            self.health_card.set_data(health)
+            if not sip.isdeleted(self.health_card):
+                self.health_card.set_data(health)
 
             # Recent activity
             activities = AnalyticsService.get_recent_activity(8)
-            self.activity_card.set_data(activities)
+            if not sip.isdeleted(self.activity_card):
+                self.activity_card.set_data(activities)
 
             # Announcements
             self._load_announcements()
 
         except Exception as e:
-            print(f"Admin dashboard data error: {e}")
+            DebugLogger.log_error(f"Admin dashboard data error: {e}", context="ADMIN_ANALYTICS")
 
     def _load_announcements(self):
         """Load recent global announcements."""
+        if sip.isdeleted(self): return
+        
         while self.announcements_container.count():
             item = self.announcements_container.takeAt(0)
             if item.widget(): item.widget().deleteLater()
             
-        announcements = AdminNotificationService.get_recent_announcements(3)
-        if not announcements:
-            self.no_announcements_lbl.setVisible(True)
-        else:
-            self.no_announcements_lbl.setVisible(False)
-            for ann in announcements:
-                card = AnnouncementCard(
-                    title=ann[0], n_type=ann[1], priority=ann[2],
-                    time_str=str(ann[3])[:16], message=ann[4]
-                )
-                self.announcements_container.addWidget(card)
+        try:
+            announcements = AdminNotificationService.get_recent_announcements(3)
+            if not announcements:
+                self.no_announcements_lbl.setVisible(True)
+            else:
+                self.no_announcements_lbl.setVisible(False)
+                for ann in announcements:
+                    card = AnnouncementCard(
+                        title=ann[0], n_type=ann[1], priority=ann[2],
+                        time_str=str(ann[3])[:16], message=ann[4]
+                    )
+                    self.announcements_container.addWidget(card)
+        except Exception as e:
+            DebugLogger.log_error(f"Announcements load error: {e}", context="ADMIN_ANNOUNCEMENTS")
 
     def update_theme(self):
         theme.update_globals()

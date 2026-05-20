@@ -11,9 +11,14 @@ from src.core.theme import *
 from src.core.styles import *
 from src.core.language_manager import LanguageManager
 
+from PyQt6.QtCore import Qt, pyqtSignal
+
 class OverviewCard(QFrame):
+    clicked = pyqtSignal()
+
     def __init__(self, title, amount, trend_text="", color=CYAN, icon="💰"):
         super().__init__()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {CARD_BG};
@@ -26,6 +31,10 @@ class OverviewCard(QFrame):
             }}
         """)
         self.setup_ui(title, amount, trend_text, color, icon)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
     def setup_ui(self, title, amount, trend_text, color, icon):
         layout = QVBoxLayout(self)
@@ -55,11 +64,13 @@ class OverviewCard(QFrame):
             layout.addWidget(trend_label)
 
 class TierOverviewCard(QFrame):
+    clicked = pyqtSignal()
+
     def __init__(self, tier="STANDARD"):
         super().__init__()
         self.tier = tier.upper()
         tier_color = "#D4AF37" if self.tier == "GOLD" else (CYAN if self.tier == "DIAMOND" else TEXT_SECONDARY)
-        
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {CARD_BG};
@@ -72,6 +83,10 @@ class TierOverviewCard(QFrame):
             }}
         """)
         self.setup_ui(tier_color)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
     def setup_ui(self, tier_color):
         layout = QVBoxLayout(self)

@@ -43,6 +43,9 @@ class SidebarButton(QPushButton):
                     font-weight: bold;
                     text-align: left;
                 }}
+                QPushButton:pressed {{
+                    background-color: {theme.CYAN}DD;
+                }}
             """)
         else:
             self.setStyleSheet(f"""
@@ -59,11 +62,17 @@ class SidebarButton(QPushButton):
                     background-color: {theme.PANEL_BG};
                     color: {theme.TEXT_PRIMARY};
                 }}
+                QPushButton:pressed {{
+                    background-color: {theme.BORDER};
+                }}
             """)
 
     def set_active(self, active):
         self.is_active = active
         self.update_style()
+
+from pathlib import Path
+from PyQt6.QtGui import QPixmap
 
 class Sidebar(QFrame):
     nav_changed = pyqtSignal(int)
@@ -79,8 +88,8 @@ class Sidebar(QFrame):
 
     def update_theme(self):
         self.setStyleSheet(f"background-color: {theme.SIDEBAR_BG}; border: none; border-right: 1px solid {theme.BORDER};")
-        self.brand_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none;")
-        self.brand_logo.setStyleSheet(f"background-color: {theme.CYAN}; border-radius: 8px;")
+        self.brand_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 18px; font-weight: 800; border: none; background: transparent;")
+        self.brand_logo.setStyleSheet(f"border: 1px solid {theme.CYAN}40; border-radius: 8px; background: transparent;")
         
         for btn in self.buttons:
             if hasattr(btn, "update_style"):
@@ -117,10 +126,28 @@ class Sidebar(QFrame):
 
         # Brand Section
         brand_container = QHBoxLayout()
-        self.brand_logo = QFrame()
+        brand_container.setSpacing(12)
+        
+        self.brand_logo = QLabel()
         self.brand_logo.setFixedSize(32, 32)
         
-        self.brand_label = QLabel("Đăng Khoa")
+        # Safe image loading - Assets are inside src/assets
+        # __file__ is src/ui/components/sidebar.py, so .parent.parent is src
+        base_dir = Path(__file__).parent.parent.parent
+        logo_path = base_dir / "assets" / "images" / "Login.png"
+        
+        pixmap = QPixmap(str(logo_path))
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(
+                32, 32, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.brand_logo.setPixmap(scaled_pixmap)
+        else:
+            self.brand_logo.setStyleSheet(f"background-color: {theme.CYAN}; border-radius: 8px;")
+
+        self.brand_label = QLabel("Đăng Khoa Bank")
         
         brand_container.addWidget(self.brand_logo)
         brand_container.addWidget(self.brand_label)
@@ -135,15 +162,22 @@ class Sidebar(QFrame):
             ("account", "👤"),
             ("wallet", "💳"),
             ("transfer", "💸"),
+            ("savings", "💰"),
             ("notifications", "🔔"),
             ("settings", "⚙️")
         ]
 
+        self.nav_buttons = {}
         for i, (key, icon) in enumerate(nav_items):
             btn = SidebarButton(key, icon, is_active=(i == 0))
+            # Use a more explicit connection for each button
             btn.clicked.connect(lambda checked, index=i: self.handle_nav_click(index))
             layout.addWidget(btn)
             self.buttons.append(btn)
+            self.nav_buttons[key] = btn
+            
+            if key == "savings":
+                self.savings_button = btn
 
         layout.addStretch()
 

@@ -18,6 +18,7 @@ from src.ui.tabs.dashboard_tab import DashboardTab
 from src.ui.tabs.account_tab import AccountTab
 from src.ui.tabs.wallet_tab import WalletTab
 from src.ui.tabs.transfer_tab import TransferTab
+from src.ui.tabs.savings_tab import SavingsTab
 from src.ui.tabs.notification_tab import NotificationTab
 from src.ui.tabs.settings_tab import SettingsTab
 
@@ -26,6 +27,9 @@ from src.core.theme_manager import ThemeManager
 from src.core.styles import get_styles
 from src.services.notification_service import NotificationService
 from src.security import security_rules
+
+from PyQt6 import sip
+from src.core.debug_logger import DebugLogger
 
 class DashboardWindow(QMainWindow):
     logout_requested = pyqtSignal()
@@ -37,7 +41,7 @@ class DashboardWindow(QMainWindow):
         self.theme_manager = ThemeManager()
         self.notification_service = NotificationService()
 
-        self.setWindowTitle("Đăng Khoa Bank - Premium Desktop")
+        self.setWindowTitle("Đăng Khoa Bank")
         self.resize(1240, 780)
         self.setMinimumSize(1000, 680)
         
@@ -58,7 +62,8 @@ class DashboardWindow(QMainWindow):
             interval_ms=timeout_ms, 
             callback=self.handle_session_timeout
         )
-        self.activity_timer.start(timeout_ms)
+        if self.activity_timer:
+            self.activity_timer.start(timeout_ms)
         
         from PyQt6.QtWidgets import QApplication
         QApplication.instance().installEventFilter(self)
@@ -66,13 +71,16 @@ class DashboardWindow(QMainWindow):
     def eventFilter(self, obj, event):
         """Track user activity to reset session timeout."""
         if event.type() in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress, QEvent.Type.KeyPress):
-            if hasattr(self, 'activity_timer'):
+            if hasattr(self, 'activity_timer') and self.activity_timer and not sip.isdeleted(self.activity_timer):
                 self.activity_timer.start() # Reset timer
         return super().eventFilter(obj, event)
 
     def handle_session_timeout(self):
         """Handle auto-logout due to inactivity."""
-        self.activity_timer.stop()
+        if sip.isdeleted(self): return
+        if hasattr(self, 'activity_timer') and self.activity_timer:
+            self.activity_timer.stop()
+        
         from PyQt6.QtWidgets import QApplication
         QApplication.instance().removeEventFilter(self)
         QMessageBox.warning(self, "Session Expired", "Your session has expired due to inactivity. Please log in again.")
@@ -80,58 +88,72 @@ class DashboardWindow(QMainWindow):
         self.close()
 
     def check_maintenance_alerts(self):
-        alerts = self.notification_service.get_active_maintenance_alerts()
-        if alerts:
-            self.maintenance_banner.setVisible(True)
-            alert = alerts[0]
-            self.maintenance_lbl.setText(f"🚧 {alert[0]}: {alert[1]}")
-        else:
-            self.maintenance_banner.setVisible(False)
+        if sip.isdeleted(self): return
+        try:
+            alerts = self.notification_service.get_active_maintenance_alerts()
+            if alerts:
+                self.maintenance_banner.setVisible(True)
+                alert = alerts[0]
+                self.maintenance_lbl.setText(f"🚧 {alert[0]}: {alert[1]}")
+            else:
+                self.maintenance_banner.setVisible(False)
+        except Exception as e:
+            DebugLogger.log_error(f"Maintenance alert check failed: {e}", context="DASHBOARD")
 
     def update_theme(self):
-        styles = get_styles()
-        self.setStyleSheet(styles["GLOBAL_STYLE"])
-        self.header.setStyleSheet(f"background-color: {theme.BACKGROUND}; border-bottom: 1px solid {theme.BORDER};")
-        self.page_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 22px; font-weight: 800; border: none; background: transparent;")
-        self.username_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: bold; border: none; background: transparent;")
-        self.acc_label.setStyleSheet(f"color: {theme.CYAN}; font-size: 11px; font-weight: 600; border: none; background: transparent;")
-        
-        self.maintenance_banner.setStyleSheet(f"""
-            QFrame {{
-                background-color: {theme.ORANGE}20;
-                border-bottom: 1px solid {theme.ORANGE}50;
-            }}
-        """)
-        self.maintenance_lbl.setStyleSheet(f"color: {theme.ORANGE}; font-weight: bold; font-size: 13px; background: transparent; border: none;")
+        if sip.isdeleted(self): return
+        try:
+            styles = get_styles()
+            self.setStyleSheet(styles["GLOBAL_STYLE"])
+            self.header.setStyleSheet(f"background-color: {theme.BACKGROUND}; border-bottom: 1px solid {theme.BORDER};")
+            self.page_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 22px; font-weight: 800; border: none; background: transparent;")
+            self.username_label.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: bold; border: none; background: transparent;")
+            self.acc_label.setStyleSheet(f"color: {theme.CYAN}; font-size: 11px; font-weight: 600; border: none; background: transparent;")
+            
+            self.maintenance_banner.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {theme.ORANGE}20;
+                    border-bottom: 1px solid {theme.ORANGE}50;
+                }}
+            """)
+            self.maintenance_lbl.setStyleSheet(f"color: {theme.ORANGE}; font-weight: bold; font-size: 13px; background: transparent; border: none;")
 
-        # Refresh all tabs theme
-        for i in range(self.stack.count()):
-            widget = self.stack.widget(i)
-            if hasattr(widget, "update_theme"):
-                widget.update_theme()
+            # Refresh all tabs theme
+            for i in range(self.stacked_widget.count()):
+                widget = self.stacked_widget.widget(i)
+                if widget and not sip.isdeleted(widget) and hasattr(widget, "update_theme"):
+                    widget.update_theme()
+        except Exception as e:
+            DebugLogger.log_error(f"update_theme crash: {e}", context="THEME")
 
     def update_translations(self):
-        # Update header and titles
-        index = self.stack.currentIndex()
-        titles = [
-            self.lang_manager.get_text("dashboard"),
-            self.lang_manager.get_text("account"),
-            self.lang_manager.get_text("wallet"),
-            self.lang_manager.get_text("transfer"),
-            self.lang_manager.get_text("notifications"),
-            self.lang_manager.get_text("settings")
-        ]
-        self.page_title.setText(titles[index])
-        
-        # Update all tabs translations
-        for i in range(self.stack.count()):
-            widget = self.stack.widget(i)
-            if hasattr(widget, "update_translations"):
-                widget.update_translations()
-        
-        # Refresh sidebar
-        if hasattr(self.sidebar, "update_translations"):
-            self.sidebar.update_translations()
+        if sip.isdeleted(self): return
+        try:
+            # Update header and titles
+            index = self.stacked_widget.currentIndex()
+            titles = [
+                self.lang_manager.get_text("dashboard"),
+                self.lang_manager.get_text("account"),
+                self.lang_manager.get_text("wallet"),
+                self.lang_manager.get_text("transfer"),
+                self.lang_manager.get_text("savings"),
+                self.lang_manager.get_text("notifications"),
+                self.lang_manager.get_text("settings")
+            ]
+            if index < len(titles):
+                self.page_title.setText(titles[index])
+            
+            # Update all tabs translations
+            for i in range(self.stacked_widget.count()):
+                widget = self.stacked_widget.widget(i)
+                if widget and not sip.isdeleted(widget) and hasattr(widget, "update_translations"):
+                    widget.update_translations()
+            
+            # Refresh sidebar
+            if hasattr(self.sidebar, "update_translations"):
+                self.sidebar.update_translations()
+        except Exception as e:
+            DebugLogger.log_error(f"update_translations crash: {e}", context="TRANSLATION")
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -182,7 +204,7 @@ class DashboardWindow(QMainWindow):
             }}
         """)
         notify_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        notify_btn.clicked.connect(lambda: self.sidebar.handle_nav_click(4))
+        notify_btn.clicked.connect(lambda: self.sidebar.handle_nav_click(5))
         
         user_details = QVBoxLayout()
         user_details.setSpacing(0)
@@ -230,37 +252,82 @@ class DashboardWindow(QMainWindow):
         self.content_layout.addWidget(self.maintenance_banner)
 
         # Stacked Pages
-        self.stack = QStackedWidget()
+        self.stacked_widget = QStackedWidget()
         self.dashboard_tab = DashboardTab(self.user_data)
         self.account_tab = AccountTab(self.user_data)
         self.wallet_tab = WalletTab(self.user_data)
         self.transfer_tab = TransferTab(self.user_data)
+        self.savings_tab = SavingsTab(self.user_data)
         self.notification_tab = NotificationTab(self.user_data)
         self.settings_tab = SettingsTab(self.user_data)
 
-        self.stack.addWidget(self.dashboard_tab)
-        self.stack.addWidget(self.account_tab)
-        self.stack.addWidget(self.wallet_tab)
-        self.stack.addWidget(self.transfer_tab)
-        self.stack.addWidget(self.notification_tab)
-        self.stack.addWidget(self.settings_tab)
+        self.stacked_widget.addWidget(self.dashboard_tab)
+        self.stacked_widget.addWidget(self.account_tab)
+        self.stacked_widget.addWidget(self.wallet_tab)
+        self.stacked_widget.addWidget(self.transfer_tab)
+        self.stacked_widget.addWidget(self.savings_tab)
+        self.stacked_widget.addWidget(self.notification_tab)
+        self.stacked_widget.addWidget(self.settings_tab)
+
+        # Page Routing Map
+        self.page_map = {
+            0: self.dashboard_tab,
+            1: self.account_tab,
+            2: self.wallet_tab,
+            3: self.transfer_tab,
+            4: self.savings_tab,
+            5: self.notification_tab,
+            6: self.settings_tab
+        }
 
         # Connect signals
+        self.dashboard_tab.nav_requested.connect(self.handle_nav_change)
         self.transfer_tab.balance_updated.connect(self.refresh_all_tabs)
+        self.savings_tab.balance_updated.connect(self.refresh_all_tabs)
 
-        self.content_layout.addWidget(self.stack)
+        self.content_layout.addWidget(self.stacked_widget)
         self.main_layout.addWidget(self.content_area)
 
+    def switch_page(self, page_key):
+        """Explicitly switch to a page by its key or index."""
+        if isinstance(page_key, str):
+            mapping = {
+                "dashboard": 0, "account": 1, "wallet": 2, 
+                "transfer": 3, "savings": 4, "notifications": 5, "settings": 6
+            }
+            index = mapping.get(page_key, 0)
+        else:
+            index = page_key
+            
+        self.handle_nav_change(index)
+        self.sidebar.handle_nav_click(index)
+
     def handle_nav_change(self, index):
-        self.stack.setCurrentIndex(index)
-        titles = ["Dashboard", "Account Details", "Wallet Management", "Money Transfer", "Notifications", "Settings"]
-        self.page_title.setText(titles[index])
+        if sip.isdeleted(self): return
+        if index < 0 or index >= self.stacked_widget.count():
+            DebugLogger.log_error(f"Invalid stack index: {index}", context="NAVIGATION")
+            return
+            
+        if index == 4: # Savings index
+            print("Savings tab clicked")
+
+        # Use setCurrentWidget for more explicit control as requested
+        target_widget = self.page_map.get(index)
+        if target_widget:
+            self.stacked_widget.setCurrentWidget(target_widget)
+        else:
+            self.stacked_widget.setCurrentIndex(index)
+
+        titles = ["Dashboard", "Account Details", "Wallet Management", "Money Transfer", "Savings Plans", "Notifications", "Settings"]
+        if index < len(titles):
+            self.page_title.setText(titles[index])
         
-        current_widget = self.stack.currentWidget()
-        if hasattr(current_widget, "update_ui"):
-            current_widget.update_ui()
-        elif hasattr(current_widget, "refresh_history"):
-            current_widget.refresh_history()
+        current_widget = self.stacked_widget.currentWidget()
+        if current_widget and not sip.isdeleted(current_widget):
+            if hasattr(current_widget, "update_ui"):
+                current_widget.update_ui()
+            elif hasattr(current_widget, "refresh_history"):
+                current_widget.refresh_history()
 
         display_name = safe_text(self.user_data.get('full_name'), self.user_data.get('username'))
         self.username_label.setText(display_name)
@@ -268,14 +335,19 @@ class DashboardWindow(QMainWindow):
 
     def refresh_all_tabs(self):
         """Refreshes all tabs that display user data."""
-        # Refetch latest user data to get updated balance and tier
-        from src.services.user_service import UserService
-        latest_data = UserService.refresh_user_data(self.user_data['username'])
-        if latest_data:
-            self.user_data.update(latest_data)
+        if sip.isdeleted(self): return
+        try:
+            # Refetch latest user data to get updated balance and tier
+            from src.services.user_service import UserService
+            latest_data = UserService.refresh_user_data(self.user_data['username'])
+            if latest_data:
+                self.user_data.update(latest_data)
 
-        self.dashboard_tab.update_ui()
-        self.wallet_tab.update_ui()
-        self.account_tab.refresh_ui()
-        self.notification_tab.update_ui()
-        self.settings_tab.update_ui()
+            if not sip.isdeleted(self.dashboard_tab): self.dashboard_tab.update_ui()
+            if not sip.isdeleted(self.wallet_tab): self.wallet_tab.update_ui()
+            if not sip.isdeleted(self.account_tab): self.account_tab.refresh_ui()
+            if not sip.isdeleted(self.savings_tab): self.savings_tab.update_ui()
+            if not sip.isdeleted(self.notification_tab): self.notification_tab.update_ui()
+            if not sip.isdeleted(self.settings_tab): self.settings_tab.update_ui()
+        except Exception as e:
+            DebugLogger.log_error(f"refresh_all_tabs crash: {e}", context="DASHBOARD")
