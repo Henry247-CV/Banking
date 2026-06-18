@@ -244,10 +244,12 @@ class AdminTransactionService:
             if conn:
                 try:
                     cursor = conn.cursor()
+                    from datetime import datetime
+                    today_start = datetime.now().replace(hour=0, minute=0, second=0).strftime("%Y-%m-%d %H:%M:%S")
                     cursor.execute(
                         "SELECT COUNT(*) FROM transactions "
-                        "WHERE sender_username = ? AND DATE(created_at) = DATE('now')",
-                        (sender_username,)
+                        "WHERE sender_username = ? AND created_at >= ?",
+                        (sender_username, today_start)
                     )
                     count = cursor.fetchone()[0]
                     if count >= AdminTransactionService.RAPID_TRANSFER_COUNT:

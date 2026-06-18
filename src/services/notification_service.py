@@ -2,14 +2,16 @@ from src.database.database import get_db_connection
 
 class NotificationService:
     @staticmethod
-    def create_notification(username, title, message, n_type="INFO"):
+    def create_notification(username, title, message, n_type="INFO", target="PERSONAL"):
         """Creates a new notification for a user."""
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
+            from datetime import datetime
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
-                "INSERT INTO notifications (username, title, message, type) VALUES (?, ?, ?, ?)",
-                (username, title, message, n_type)
+                "INSERT INTO notifications (username, title, message, type, target, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (username, title, message, n_type, target, created_at)
             )
             conn.commit()
             return True

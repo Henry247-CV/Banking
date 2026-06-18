@@ -359,21 +359,50 @@ class TransactionService:
     def get_user_transactions(username: str) -> list:
         """
         Phương thức tương thích ngược trả về các giao dịch theo cùng định dạng
-        tuple như TransferService.get_user_transactions() cũ.
+        tuple như TransferService.get_user_transactions() cũ (cả gửi và nhận).
         """
         conn = get_db_connection()
         if not conn:
             return []
         try:
             cursor = conn.cursor()
+            # 1. Fetch user's account_number and phone to identify received transactions
+            cursor.execute("SELECT account_number, phone FROM users WHERE username = ?", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return []
+                
+            account_number = user_row["account_number"]
+            phone = user_row["phone"]
+            
+            # 2. Query transactions where the user is either sender OR receiver
             cursor.execute(
-                """SELECT created_at, receiver_bank, receiver_account, amount, status
-                   FROM transactions
-                   WHERE sender_username = ?
-                   ORDER BY created_at DESC""",
-                (username,),
+                """
+                SELECT t.created_at, t.receiver_bank, t.receiver_account, t.amount, t.status, 
+                       t.sender_username, u_sender.account_number AS sender_account_num
+                FROM transactions t
+                LEFT JOIN users u_sender ON t.sender_username = u_sender.username
+                WHERE t.sender_username = ?
+                   OR (t.receiver_bank IN ('Đăng Khoa Bank', 'DKB') AND (t.receiver_account = ? OR t.receiver_account = ?))
+                ORDER BY t.created_at DESC
+                """,
+                (username, account_number, phone)
             )
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            
+            # 3. Format rows to match the expected return tuple format
+            formatted = []
+            for r in rows:
+                created_at, receiver_bank, receiver_account, amount, status, sender_username, sender_account_num = r
+                if sender_username == username:
+                    # Outgoing: amount is positive, so caller's negation (-amount) makes it negative/red
+                    formatted.append((created_at, receiver_bank, receiver_account, amount, status))
+                else:
+                    # Incoming: amount is negated, so caller's negation (-amount) makes it positive/green
+                    display_acc = sender_account_num if sender_account_num else sender_username
+                    formatted.append((created_at, "Đăng Khoa Bank", display_acc, -amount, status))
+                    
+            return formatted
         except Exception as e:
             GlobalExceptionHandler.log_error(f"TransactionService.get_user_transactions error for {username}:\n{traceback.format_exc()}")
             return []

@@ -9,10 +9,12 @@ class AdminNotificationService:
         if not conn: return False
         try:
             cursor = conn.cursor()
+            from datetime import datetime
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
-                """INSERT INTO notifications (title, message, type, priority, target, created_by) 
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (title, message, n_type, priority, target, created_by)
+                """INSERT INTO notifications (title, message, type, priority, target, created_by, created_at) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (title, message, n_type, priority, target, created_by, created_at)
             )
             conn.commit()
             return True

@@ -194,8 +194,6 @@ class RecentActivityCard(QFrame):
     def __init__(self):
         super().__init__()
         self.lang_manager = LanguageManager()
-        self.setMinimumHeight(120)
-        self.setMaximumHeight(220)
         self._setup_ui()
         self.update_theme()
 
@@ -262,6 +260,7 @@ class RecentActivityCard(QFrame):
             row_layout.addWidget(desc_lbl)
             row_layout.addStretch()
             row_layout.addWidget(time_lbl)
+            row_widget.setFixedHeight(24)
 
             self.activity_container.addWidget(row_widget)
 

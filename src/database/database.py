@@ -2,7 +2,8 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = "bank.db"
+# DB_PATH will always be resolved relative to the 'BankingApp' root directory (parent of src)
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bank.db"))
 
 def init_db():
     """Initializes the database and creates all required tables with safe migrations."""

@@ -34,31 +34,82 @@ class TransferService:
 
             new_balance = user_row[0] - amount
 
-            # 2. Subtract balance
+            # If internal, look up and validate receiver
+            is_internal = receiver_bank in ("Đăng Khoa Bank", "DKB")
+            receiver_username = None
+            new_receiver_balance = None
+            if is_internal:
+                cursor.execute(
+                    "SELECT username, balance, account_status FROM users WHERE account_number = ? OR phone = ?",
+                    (receiver_account.strip(), receiver_account.strip())
+                )
+                receiver_row = cursor.fetchone()
+                if not receiver_row:
+                    return False, f"Receiver account '{receiver_account}' not found in Đăng Khoa Bank."
+                
+                receiver_username = receiver_row["username"]
+                receiver_status = receiver_row["account_status"] or "ACTIVE"
+                if receiver_status in ("FROZEN", "SUSPENDED"):
+                    return False, "Receiver account is not available for transfers."
+                if receiver_username == sender_username:
+                    return False, "You cannot transfer to your own account."
+                
+                new_receiver_balance = float(receiver_row["balance"]) + amount
+
+            # 2. Update balances
             cursor.execute(
                 "UPDATE users SET balance = ? WHERE username = ?",
                 (new_balance, sender_username)
             )
+            if is_internal and receiver_username:
+                cursor.execute(
+                    "UPDATE users SET balance = ? WHERE username = ?",
+                    (new_receiver_balance, receiver_username)
+                )
 
             # 3. Record transaction
+            from src.admin.services.admin_transaction_service import AdminTransactionService
+            import uuid
+            
+            risk_level = AdminTransactionService.calculate_risk_level(amount, sender_username)
+            flagged = 1 if risk_level in ("HIGH", "CRITICAL") else 0
+            review_status = "REVIEWING" if flagged else "COMPLETED"
+            txn_id = f"TXN-{datetime.now().year}-{uuid.uuid4().hex[:6].upper()}"
+            txn_type = "TRANSFER"
+            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
             cursor.execute(
-                """INSERT INTO transactions (sender_username, receiver_bank, receiver_account, amount, note)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (sender_username, receiver_bank, receiver_account, amount, note)
+                """INSERT INTO transactions 
+                   (transaction_id, sender_username, receiver_bank, receiver_account, 
+                    amount, note, status, transaction_type, flagged, risk_level, review_status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (txn_id, sender_username, receiver_bank, receiver_account, 
+                 amount, note, "SUCCESS", txn_type, flagged, risk_level, review_status, created_at)
             )
 
             conn.commit()
             
-            # Auto-update tier after balance change
+            # Auto-update tiers after balance change
             TierService.update_user_tier(sender_username, new_balance)
+            if is_internal and receiver_username:
+                TierService.update_user_tier(receiver_username, new_receiver_balance)
 
-            # Notify transfer success
+            # Notify transfer success (sender)
             NotificationService.create_notification(
                 sender_username,
                 "Transfer Successful",
                 f"You have successfully transferred {"{:,.0f}".format(amount)} VND to {receiver_bank} account {receiver_account}.",
                 "TRANSFER"
             )
+
+            # Notify transfer success (receiver)
+            if is_internal and receiver_username:
+                NotificationService.create_notification(
+                    receiver_username,
+                    "Money Received",
+                    f"You received {"{:,.0f}".format(amount)} VND from {sender_username}.",
+                    "TRANSFER"
+                )
             
             return True, "Transfer successful."
         except Exception as e:
@@ -69,16 +120,49 @@ class TransferService:
 
     @staticmethod
     def get_user_transactions(username):
-        """Retrieves all transactions for a specific user."""
+        """Retrieves all transactions for a specific user (both sent and received)."""
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # 1. Fetch user's account_number and phone to identify received transactions
+        cursor.execute("SELECT account_number, phone FROM users WHERE username = ?", (username,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            conn.close()
+            return []
+            
+        account_number = user_row["account_number"]
+        phone = user_row["phone"]
+        
+        # 2. Query transactions where the user is either sender OR receiver
         cursor.execute(
-            "SELECT created_at, receiver_bank, receiver_account, amount, status FROM transactions WHERE sender_username = ? ORDER BY created_at DESC",
-            (username,)
+            """
+            SELECT t.created_at, t.receiver_bank, t.receiver_account, t.amount, t.status, 
+                   t.sender_username, u_sender.account_number AS sender_account_num
+            FROM transactions t
+            LEFT JOIN users u_sender ON t.sender_username = u_sender.username
+            WHERE t.sender_username = ?
+               OR (t.receiver_bank IN ('Đăng Khoa Bank', 'DKB') AND (t.receiver_account = ? OR t.receiver_account = ?))
+            ORDER BY t.created_at DESC
+            """,
+            (username, account_number, phone)
         )
-        transactions = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
-        return transactions
+        
+        # 3. Format rows to match the expected return tuple format
+        formatted = []
+        for r in rows:
+            created_at, receiver_bank, receiver_account, amount, status, sender_username, sender_account_num = r
+            if sender_username == username:
+                # Outgoing: amount is positive, so caller's negation (-amount) makes it negative/red
+                formatted.append((created_at, receiver_bank, receiver_account, amount, status))
+            else:
+                # Incoming: amount is negated, so caller's negation (-amount) makes it positive/green
+                display_acc = sender_account_num if sender_account_num else sender_username
+                formatted.append((created_at, "Đăng Khoa Bank", display_acc, -amount, status))
+                
+        return formatted
 
     @staticmethod
     def generate_transfer_bill(sender_username, receiver_bank, receiver_account, amount, note):
