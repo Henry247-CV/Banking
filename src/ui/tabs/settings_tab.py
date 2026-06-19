@@ -286,8 +286,9 @@ class SettingsTab(QWidget):
             self.savings_list_layout.addWidget(card)
 
     def show_change_password_dialog(self):
-        # Implementation omitted for brevity, but should be updated with theme
-        pass
+        from src.ui.dialogs.change_password_dialog import ChangePasswordDialog
+        dialog = ChangePasswordDialog(self.user_data['id'], self.user_data['username'], self)
+        dialog.exec()
 
     def update_ui(self):
         self.load_savings()
