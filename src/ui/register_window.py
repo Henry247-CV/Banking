@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+import re
 from src.core.theme import *
 from src.core.styles import *
 from src.services.auth_service import AuthService
@@ -178,16 +179,29 @@ class RegisterWindow(QWidget):
         confirm_password = self.confirm_password.text().strip()
 
         # Validation
-        if not all([full_name, username, phone, cccd, password, confirm_password]):
+        if not all([full_name, username, email, phone, cccd, password, confirm_password]):
             self.show_error(self.lang_manager.get_text("required_fields"))
             return
 
-        if not phone.isdigit():
-            self.show_error("Phone number must be numeric.")
+        if not phone.isdigit() or len(phone) != 10 or not phone.startswith('0'):
+            if self.lang_manager.current_language == "vi":
+                self.show_error("Số điện thoại phải có đúng 10 chữ số và bắt đầu bằng số 0.")
+            else:
+                self.show_error("Phone number must be exactly 10 digits and start with 0.")
             return
 
-        if not cccd.isdigit():
-            self.show_error("CCCD must be numeric.")
+        if not re.match(r"^[a-zA-Z0-9._%+-]+@gmail\.com$", email):
+            if self.lang_manager.current_language == "vi":
+                self.show_error("Email phải là địa chỉ Gmail hợp lệ (VD: vi_du@gmail.com).")
+            else:
+                self.show_error("Email must be a valid Gmail address (e.g., example@gmail.com).")
+            return
+
+        if not cccd.isdigit() or len(cccd) != 12:
+            if self.lang_manager.current_language == "vi":
+                self.show_error("CCCD phải có đúng 12 chữ số.")
+            else:
+                self.show_error("CCCD must be exactly 12 digits.")
             return
 
         if len(password) < 6:
